@@ -71,6 +71,12 @@ export interface ErrorAnalysisResponse {
     news_appendix?: string[];
     vdb_reports?: string[];
   };
+  rmse_context?: {
+    store_type_rmse?: number;
+    store_type_mae?: number;
+    overall_percentile?: number;
+    z_score?: number;
+  };
   hypothesis: string;
   confidence_score: number;
   supporting_evidence: Array<{
@@ -86,15 +92,17 @@ export interface ErrorAnalysisResponse {
 class RetailAPIService {
   async getStoreTypes(): Promise<string[]> {
     const response = await apiClient.get('/retail/api/store-types');
-    const types = response.data?.store_types;
+    const raw = typeof response.data === 'string' ? JSON.parse(response.data) : response.data;
+    const types = raw?.store_types;
     return Array.isArray(types) ? types : [];
   }
 
   async getDateRange(): Promise<{ start_date: string; end_date: string }> {
     const response = await apiClient.get('/retail/api/date-range');
+    const raw = typeof response.data === 'string' ? JSON.parse(response.data) : response.data;
     return {
-      start_date: response.data.start_date,
-      end_date: response.data.end_date,
+      start_date: raw?.start_date || '',
+      end_date: raw?.end_date || '',
     };
   }
 
@@ -104,7 +112,8 @@ class RetailAPIService {
     end_date?: string;
   }): Promise<ForecastData[]> {
     const response = await apiClient.get('/retail/api/forecast-data', { params });
-    const data = response.data?.data;
+    const raw = typeof response.data === 'string' ? JSON.parse(response.data) : response.data;
+    const data = raw?.data;
     return Array.isArray(data) ? data : [];
   }
 

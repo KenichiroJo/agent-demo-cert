@@ -36,8 +36,14 @@ const ForecastDashboard: React.FC = () => {
         }
 
         const dateRange = await retailApiService.getDateRange();
-        const start = dateRange.start_date.split('T')[0];
-        const end = dateRange.end_date.split('T')[0];
+        const start = (dateRange.start_date || '').split('T')[0];
+        const end = (dateRange.end_date || '').split('T')[0];
+
+        if (!start || !end) {
+          setError('日付範囲の取得に失敗しました。データが存在するか確認してください。');
+          return;
+        }
+
         setMinDate(start);
         setMaxDate(end);
 
@@ -196,7 +202,7 @@ const ForecastDashboard: React.FC = () => {
           <ForecastChart
             data={forecastData}
             loading={loading.data}
-            error={error}
+            error={null}
             onPointClick={handleAnalyzeError}
           />
         </div>
