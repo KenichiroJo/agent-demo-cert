@@ -69,7 +69,7 @@ export function ChatProgress({
                     <Loader2 className="h-4 w-4 text-blue-500 animate-spin" />
                   )}
                   <span className="mn-label">
-                    {hasError ? 'Failed' : allDone ? 'Completed' : 'Processing'}
+                    {hasError ? '失敗' : allDone ? '完了' : '処理中'}
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
@@ -78,7 +78,7 @@ export function ChatProgress({
                     className="caption-01"
                   >
                     {hasError
-                      ? `${errorCount} error${errorCount > 1 ? 's' : ''}`
+                      ? `${errorCount} エラー`
                       : `${completedCount}/${totalCount}`}
                   </Badge>
                   {hasError && (

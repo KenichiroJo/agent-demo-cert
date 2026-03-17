@@ -17,7 +17,7 @@ export function ThinkingEvent() {
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 mb-1 h-full">
           <span className="mn-label flex items-center h-full" data-testid="thinking-loading">
-            Thinking
+            思考中
           </span>
         </div>
       </div>

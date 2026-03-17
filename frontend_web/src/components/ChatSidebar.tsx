@@ -70,7 +70,7 @@ export function ChatSidebar({
             <SidebarMenuButton disabled={isLoading} asChild isActive={!!matchSettings}>
               <Link to={PATHS.SETTINGS.ROOT}>
                 <Settings />
-                <span>App Settings</span>
+                <span>アプリ設定</span>
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
@@ -81,11 +81,11 @@ export function ChatSidebar({
               testId="start-new-chat-btn"
             >
               <Plus />
-              <span>Start new chat</span>
+              <span>新しいチャットを開始</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
 
-          <SidebarGroupLabel>Chats</SidebarGroupLabel>
+          <SidebarGroupLabel>チャット一覧</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu id="sidebar-chats">
               {isLoading ? (
@@ -106,7 +106,7 @@ export function ChatSidebar({
                     >
                       <div>
                         {getIcon(chat.id)}
-                        <span>{chat.name || 'New Chat'}</span>
+                        <span>{chat.name || '新規チャット'}</span>
                       </div>
                     </SidebarMenuButton>
                     {chat.initialised && !chatToDelete && (
@@ -124,7 +124,7 @@ export function ChatSidebar({
                               setOpen(true);
                             }}
                           >
-                            <span>Delete chat</span>
+                            <span>チャットを削除</span>
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>

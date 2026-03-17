@@ -65,7 +65,7 @@ export function ChatTextInput({
               </Button>
             </span>
           </TooltipTrigger>
-          <TooltipContent>Agent is running</TooltipContent>
+          <TooltipContent>エージェント実行中</TooltipContent>
         </Tooltip>
       ) : (
         <Button

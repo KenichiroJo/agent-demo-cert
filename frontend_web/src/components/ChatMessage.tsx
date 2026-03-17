@@ -58,7 +58,7 @@ class ChatMessageErrorBoundary extends Component<
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1">
-              <span className="mn-label text-destructive">Failed to render message</span>
+              <span className="mn-label text-destructive">メッセージの表示に失敗しました</span>
             </div>
             <CodeBlock code={JSON.stringify(this.props.message, null, 2)} />
             {this.state.error && (
@@ -129,7 +129,7 @@ export function ToolInvocationPart({ part }: { part: ToolInvocationUIPart }) {
       {/* Header */}
       <div className="flex items-center gap-2 px-3 py-2 bg-muted/30 dark:bg-muted/20 border-b border-border">
         <Wrench className="w-4 h-4 text-muted-foreground" />
-        <span className="body-secondary">Tool Call</span>
+        <span className="body-secondary">ツール呼び出し</span>
         <Badge variant="default" className="code">
           {toolInvocation.toolName}
         </Badge>
@@ -145,7 +145,7 @@ export function ToolInvocationPart({ part }: { part: ToolInvocationUIPart }) {
         <div className="border-b border-border last:border-b-0">
           <div className="caption-01 flex items-center gap-1.5 px-3 py-1.5 bg-muted/20">
             <ChevronRight className="w-3 h-3" />
-            Arguments
+            引数
           </div>
           <CodeBlock code={JSON.stringify(toolInvocation.args, null, '  ')} />
         </div>
@@ -156,7 +156,7 @@ export function ToolInvocationPart({ part }: { part: ToolInvocationUIPart }) {
         <div>
           <div className="caption-01 flex items-center gap-1.5 px-3 py-1.5 bg-muted/20">
             <ChevronRight className="w-3 h-3" />
-            Result
+            結果
           </div>
           <CodeBlock code={result} />
         </div>

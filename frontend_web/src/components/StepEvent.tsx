@@ -32,7 +32,7 @@ export function StepEvent({ id, name, createdAt, isRunning, threadId }: StepEven
           <span className="mn-label">{name}</span>
           <span className="caption-01">{date.toLocaleTimeString()}</span>
         </div>
-        <div className="caption-01">{isRunning ? 'In progress...' : 'Completed'}</div>
+        <div className="caption-01">{isRunning ? '処理中...' : '完了'}</div>
       </div>
     </div>
   );
