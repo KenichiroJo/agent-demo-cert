@@ -1,0 +1,42 @@
+---
+root:
+  - env: MCP_SERVER_PORT
+    type: string
+    default: "9000"
+    optional: true
+    help: "The local port to access the MCP Server. Should have a unique port."
+  - env: DATAROBOT_DEFAULT_MCP_EXECUTION_ENVIRONMENT
+    type: string
+    default: "[DataRobot] Python 3.11 GenAI Agents"
+    optional: true
+    help: "Enter the default execution environment for the MCP server."
+  - env: DATAROBOT_DEFAULT_MCP_EXECUTION_ENVIRONMENT_VERSION_ID
+    type: string
+    default: "69417fa8b1ce07076dca7611"
+    optional: true
+    help: "Enter the default execution environment version ID for the MCP server."
+  - key: enabled_tools
+    env: MCP_CLI_CONFIGS
+    multiple: true
+    help: "Select which tool integrations and features to enable (space to toggle, enter to confirm)."
+    default: "predictive,gdrive,microsoft_graph"
+    always_prompt: true
+    options:
+      - name: "Enable Predictive tools"
+        value: "predictive"
+      - name: "Enable Google Drive (requires Google OAuth)"
+        value: "gdrive"
+      - name: "Enable Microsoft Graph tools (requires Microsoft OAuth)"
+        value: "microsoft_graph"
+      - name: "Enable Jira tools (requires Atlassian OAuth)"
+        value: "jira"
+      - name: "Enable Confluence tools (requires Atlassian OAuth)"
+        value: "confluence"
+      - name: "Enable Perplexity tools (requires Perplexity API key)"
+        value: "perplexity"
+      - name: "Enable Tavily tools (requires Tavily API key)"
+        value: "tavily"
+      - name: "Register DataRobot dynamic tools on startup"
+        value: "dynamic_tools"
+      - name: "Register DataRobot dynamic prompts on startup"
+        value: "dynamic_prompts"

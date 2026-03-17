@@ -1,0 +1,166 @@
+import { PropsWithChildren } from 'react';
+import { v4 as uuid } from 'uuid';
+import z from 'zod/v4';
+import { Skeleton } from '@/components/ui/skeleton.tsx';
+import { Chat, useChatScroll } from '@/components/Chat.tsx';
+import { useChatContext } from '@/hooks/use-chat-context.ts';
+import { useAgUiTool } from '@/hooks/use-ag-ui-tool.ts';
+import { ChatMessages } from '@/components/ChatMessages.tsx';
+import { ChatProgress } from '@/components/ChatProgress.tsx';
+import { ChatTextInput } from '@/components/ChatTextInput.tsx';
+import { ChatError } from '@/components/ChatError.tsx';
+import { ChatMessagesMemo } from '@/components/ChatMessage.tsx';
+import { StepEvent } from '@/components/StepEvent.tsx';
+import { ThinkingEvent } from '@/components/ThinkingEvent.tsx';
+import { ChatProvider } from '@/components/ChatProvider.tsx';
+import { StartNewChat } from '@/components/StartNewChat.tsx';
+import {
+  isErrorStateEvent,
+  isMessageStateEvent,
+  isStepStateEvent,
+  isThinkingEvent,
+} from '@/types/events.ts';
+import { type MessageResponse } from '@/api/chat/types.ts';
+import { ScrollArea } from '@/components/ui/scroll-area';
+
+const initialMessages: MessageResponse[] = [
+  {
+    id: uuid(),
+    role: 'assistant',
+    content: {
+      format: 2,
+      parts: [
+        {
+          type: 'text',
+          text: `Hello!`,
+        },
+      ],
+    },
+    createdAt: new Date(),
+    type: 'initial',
+  },
+];
+
+export interface ChatPageContentProps {
+  chatId: string;
+  hasChat: boolean;
+  isNewChat: boolean;
+  isLoadingChats: boolean;
+  addChatHandler: () => void;
+}
+
+export function ChatPageContent({
+  chatId,
+  hasChat,
+  isNewChat,
+  isLoadingChats,
+  addChatHandler,
+}: ChatPageContentProps) {
+  return (
+    <Loading isLoading={isLoadingChats}>
+      {hasChat ? (
+        <ChatProvider chatId={chatId} runInBackground={true} isNewChat={isNewChat}>
+          <ChatImplementation chatId={chatId} />
+        </ChatProvider>
+      ) : (
+        <StartNewChat createChat={addChatHandler} />
+      )}
+    </Loading>
+  );
+}
+
+function Loading({ isLoading, children }: { isLoading: boolean } & PropsWithChildren) {
+  if (isLoading) {
+    return (
+      <div className="flex flex-1 flex-col w-full p-4 space-y-4">
+        <Skeleton className="h-20 w-full" />
+        <Skeleton className="h-20 w-full" />
+        <Skeleton className="h-20 w-full" />
+      </div>
+    );
+  }
+
+  return children;
+}
+
+export function ChatImplementation({ chatId }: { chatId: string }) {
+  const {
+    sendMessage,
+    userInput,
+    setUserInput,
+    combinedEvents,
+    progress,
+    deleteProgress,
+    isLoadingHistory,
+    isAgentRunning,
+  } = useChatContext();
+
+  useAgUiTool({
+    name: 'alert',
+    description: 'Action. Display an alert to the user',
+    handler: ({ message }) => alert(message),
+    parameters: z.object({
+      message: z.string().describe('The message that will be displayed to the user'),
+    }),
+    background: false,
+  });
+
+  const { scrollContainerRef, onChatScroll } = useChatScroll({ chatId, events: combinedEvents });
+
+  // Example for a custom UI widget
+  //
+  // useAgUiTool({
+  //   name: 'weather',
+  //   description: 'Widget. Displays weather result to user',
+  //   render: ({ args }) => {
+  //     return <WeatherWidget {...args} />;
+  //   },
+  //   parameters: z.object({
+  //     temperature: z.number(),
+  //     feelsLike: z.number(),
+  //     humidity: z.number(),
+  //     windSpeed: z.number(),
+  //     windGust: z.number(),
+  //     conditions: z.string(),
+  //     location: z.string(),
+  //   }),
+  // });
+
+  return (
+    <Chat initialMessages={initialMessages}>
+      <ScrollArea
+        className="scroll mb-5 w-full flex-1 min-h-0"
+        scrollViewportRef={scrollContainerRef}
+        onWheel={onChatScroll}
+      >
+        <div className="w-full justify-self-center">
+          <ChatMessages isLoading={isLoadingHistory} messages={combinedEvents} chatId={chatId}>
+            {combinedEvents &&
+              combinedEvents.map(m => {
+                if (isErrorStateEvent(m)) {
+                  return <ChatError key={m.value.id} {...m.value} />;
+                }
+                if (isMessageStateEvent(m)) {
+                  return <ChatMessagesMemo key={m.value.id} {...m.value} />;
+                }
+                if (isStepStateEvent(m)) {
+                  return <StepEvent key={m.value.id} {...m.value} />;
+                }
+                if (isThinkingEvent(m)) {
+                  return <ThinkingEvent key={m.type} />;
+                }
+              })}
+          </ChatMessages>
+          <ChatProgress progress={progress || {}} deleteProgress={deleteProgress} />
+        </div>
+      </ScrollArea>
+
+      <ChatTextInput
+        userInput={userInput}
+        setUserInput={setUserInput}
+        onSubmit={sendMessage}
+        runningAgent={isAgentRunning}
+      />
+    </Chat>
+  );
+}

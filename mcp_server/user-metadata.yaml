@@ -1,0 +1,14 @@
+---
+name: runtime-params
+
+# This is a template for rendering custom model user metadata.
+
+runtimeParameterDefinitions:
+  - fieldName: user_name
+    type: string
+  - fieldName: FORECAST_DEPLOYMENT_ID
+    type: string
+  - fieldName: SCORING_DATASET_ID
+    type: string
+  - fieldName: VDB_DEPLOYMENT_ID
+    type: string

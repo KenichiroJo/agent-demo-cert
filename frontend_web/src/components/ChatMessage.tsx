@@ -1,0 +1,237 @@
+import { memo, useMemo, Component, type ReactNode, type ErrorInfo } from 'react';
+import {
+  User,
+  Bot,
+  Cog,
+  Hammer,
+  Wrench,
+  ChevronRight,
+  CheckCircle2,
+  Loader2,
+  AlertTriangle,
+  Brain,
+} from 'lucide-react';
+import { CodeBlock } from '@/components/ui/code-block';
+import { cn } from '@/lib/utils';
+import type { ContentPart, ToolInvocationUIPart } from '@/types/message';
+import { useChatContext } from '@/hooks/use-chat-context';
+import type { ChatMessageEvent } from '@/types/events';
+import { Badge } from '@/components/ui/badge';
+import { Markdown } from '@/components/ui/markdown';
+import { unwrapMarkdownCodeBlocks } from '@/lib/markdown';
+
+interface ChatMessageErrorBoundaryProps {
+  children: ReactNode;
+  message: ChatMessageEvent;
+}
+
+interface ChatMessageErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
+class ChatMessageErrorBoundary extends Component<
+  ChatMessageErrorBoundaryProps,
+  ChatMessageErrorBoundaryState
+> {
+  constructor(props: ChatMessageErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error): ChatMessageErrorBoundaryState {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error('ChatMessage render error:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className={'flex gap-3 p-4 rounded-lg bg-card'}>
+          <div className="flex-shrink-0">
+            <div className="w-8 h-8 rounded-full flex items-center justify-center bg-destructive/20 text-destructive">
+              <AlertTriangle className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="mn-label text-destructive">Failed to render message</span>
+            </div>
+            <CodeBlock code={JSON.stringify(this.props.message, null, 2)} />
+            {this.state.error && (
+              <div className="caption-01 my-2">
+                <div>{this.state.error.message}</div>
+                <div>{this.state.error.stack}</div>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
+export function UniversalContentPart({ part }: { part: ContentPart }) {
+  if (part.type === 'text') {
+    return <TextContentPart content={part.text} />;
+  }
+  if (part.type === 'reasoning') {
+    return <TextContentPart content={part.reasoning} />;
+  }
+  if (part.type === 'tool-invocation') {
+    return <ToolInvocationPart part={part} />;
+  }
+  return <CodeBlock code={JSON.stringify(part, null, '  ')} />;
+}
+
+export function TextContentPart({ content }: { content: string }) {
+  return <Markdown content={content ? unwrapMarkdownCodeBlocks(content) : ''} />;
+}
+
+export function ToolInvocationPart({ part }: { part: ToolInvocationUIPart }) {
+  const { toolInvocation } = part;
+  const { toolName } = toolInvocation;
+  const ctx = useChatContext();
+  const tool = ctx.getTool(toolName);
+  if (tool?.render) {
+    return tool.render({ status: 'complete', args: toolInvocation.args });
+  }
+  if (tool?.renderAndWait) {
+    return tool.renderAndWait({
+      status: 'complete',
+      args: toolInvocation.args,
+      callback: event => {
+        console.log(event);
+      },
+    });
+  }
+
+  const hasResult = !!toolInvocation.result;
+
+  const result = useMemo(() => {
+    try {
+      if (toolInvocation.result) {
+        return JSON.stringify(JSON.parse(toolInvocation.result), null, '  ');
+      }
+    } catch (e) {
+      console.debug('Tool result is not a JSON', toolInvocation.result);
+    }
+    return toolInvocation.result || '';
+  }, [toolInvocation.result]);
+
+  return (
+    <div className="my-2 rounded-lg border border-border bg-card/50 dark:bg-card/30 overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center gap-2 px-3 py-2 bg-muted/30 dark:bg-muted/20 border-b border-border">
+        <Wrench className="w-4 h-4 text-muted-foreground" />
+        <span className="body-secondary">Tool Call</span>
+        <Badge variant="default" className="code">
+          {toolInvocation.toolName}
+        </Badge>
+        {hasResult ? (
+          <CheckCircle2 className="w-4 h-4 text-green-500 dark:text-green-400 ml-auto" />
+        ) : (
+          <Loader2 className="w-4 h-4 text-muted-foreground ml-auto animate-spin" />
+        )}
+      </div>
+
+      {/* Arguments Section */}
+      {toolInvocation.args && (
+        <div className="border-b border-border last:border-b-0">
+          <div className="caption-01 flex items-center gap-1.5 px-3 py-1.5 bg-muted/20">
+            <ChevronRight className="w-3 h-3" />
+            Arguments
+          </div>
+          <CodeBlock code={JSON.stringify(toolInvocation.args, null, '  ')} />
+        </div>
+      )}
+
+      {/* Result Section */}
+      {result && (
+        <div>
+          <div className="caption-01 flex items-center gap-1.5 px-3 py-1.5 bg-muted/20">
+            <ChevronRight className="w-3 h-3" />
+            Result
+          </div>
+          <CodeBlock code={result} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ChatMessageContent({
+  id,
+  role,
+  threadId,
+  resourceId,
+  content,
+  type = 'default',
+}: ChatMessageEvent) {
+  const isUser = role === 'user';
+  let Icon = useMemo(() => {
+    if (isUser) {
+      return User;
+    } else if (role === 'system') {
+      return Cog;
+    } else if (role === 'reasoning') {
+      return Brain;
+    } else if (content.parts.some(({ type }) => type === 'tool-invocation')) {
+      return Hammer;
+    } else {
+      return Bot;
+    }
+  }, [role, content.parts]);
+
+  return (
+    <div
+      className={cn('flex gap-3 p-4 rounded-lg', isUser ? 'bg-card' : '')}
+      data-message-id={id}
+      data-thread-id={threadId}
+      data-resource-id={resourceId}
+      data-testid={`${type}-${role}-message-${id}`}
+    >
+      <div className="flex-shrink-0">
+        <div
+          className={cn(
+            'w-8 h-8 rounded-full flex items-center justify-center',
+            isUser
+              ? 'bg-primary text-primary-foreground'
+              : role === 'assistant'
+                ? 'bg-secondary text-secondary-foreground'
+                : role === 'reasoning'
+                  ? 'bg-muted text-muted-foreground'
+                  : 'bg-accent text-accent-foreground'
+          )}
+        >
+          <Icon className="w-4 h-4" />
+        </div>
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 mb-1">
+          <span className="mn-label capitalize">{role}</span>
+        </div>
+        <div className="body break-words text-wrap [line-break:anywhere] overflow-hidden">
+          {content.parts.map((part, i) => (
+            <UniversalContentPart key={i} part={part} />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function ChatMessage(props: ChatMessageEvent) {
+  return (
+    <ChatMessageErrorBoundary message={props}>
+      <ChatMessageContent {...props} />
+    </ChatMessageErrorBoundary>
+  );
+}
+
+export const ChatMessagesMemo = memo(ChatMessage);
