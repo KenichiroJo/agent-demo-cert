@@ -64,11 +64,15 @@ const ForecastDashboard: React.FC = () => {
     init();
   }, []);
 
-  // Fetch data when filters change
+  // Fetch data when filters change (debounced to avoid rapid fire from date input)
   useEffect(() => {
-    if (selectedStoreType && startDate && endDate) {
+    if (!selectedStoreType || !startDate || !endDate) return;
+    // Validate date format (YYYY-MM-DD, 10 chars) to avoid firing on partial input
+    if (startDate.length < 10 || endDate.length < 10) return;
+    const timer = setTimeout(() => {
       fetchData();
-    }
+    }, 400);
+    return () => clearTimeout(timer);
   }, [selectedStoreType, startDate, endDate]);
 
   const fetchData = useCallback(async () => {

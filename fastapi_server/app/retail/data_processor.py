@@ -6,6 +6,11 @@ CSVカラム名 (01_create_dataset.ipynb で生成):
   - year_month: 日付 (YYYY-MM-DD)
   - store_type: 業態名 (百貨店, スーパー, コンビニ, ドラッグストア, EC)
   - sales_billion_yen: 売上高 (億円)
+
+Prediction API レスポンスカラム:
+  - store_type, year_month, FORECAST_POINT, FORECAST_DISTANCE
+  - sales_billion_yen (actual)_PREDICTION
+  - DEPLOYMENT_APPROVAL_STATUS
 """
 
 import io
@@ -22,7 +27,6 @@ from app.retail.utils import json_safe_float
 
 class RetailDataProcessor:
     def __init__(self):
-        # データディレクトリはプロジェクトルートの data/ を参照
         project_root = os.path.dirname(
             os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         )
@@ -38,14 +42,37 @@ class RetailDataProcessor:
         self._load_data()
 
     # ------------------------------------------------------------------
+    # ユーティリティ
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _to_tz_naive(series: pd.Series) -> pd.Series:
+        """タイムゾーン付き datetime を tz-naive (UTC相当) に統一する。
+        Prediction API は UTC 付き timestamps を返す場合があり、
+        training/actuals の tz-naive と merge するとエラーになるため。"""
+        if hasattr(series.dt, "tz") and series.dt.tz is not None:
+            return series.dt.tz_convert("UTC").dt.tz_localize(None)
+        return series
+
+    @staticmethod
+    def _parse_date_column(df: pd.DataFrame) -> pd.DataFrame:
+        """year_month (または date) カラムを tz-naive datetime64 に変換する。"""
+        if "year_month" in df.columns:
+            df["year_month"] = pd.to_datetime(df["year_month"])
+        elif "date" in df.columns:
+            df.rename(columns={"date": "year_month"}, inplace=True)
+            df["year_month"] = pd.to_datetime(df["year_month"])
+        if "year_month" in df.columns:
+            df["year_month"] = RetailDataProcessor._to_tz_naive(df["year_month"])
+        return df
+
+    # ------------------------------------------------------------------
     # DataRobot Prediction API
     # ------------------------------------------------------------------
 
     def _build_scoring_data(self) -> pd.DataFrame:
         """学習データから予測用スコアリングデータを構築する。
-        直近12ヶ月の実績 + 未来3ヶ月の空行（target=NaN）。
-        AI Catalog のCSVは NaN行が欠落する場合があるため、動的に生成する。
-        """
+        直近12ヶ月の実績 + 未来N ヶ月の空行（target=NaN）。"""
         forecast_months = int(os.getenv("FORECAST_WINDOW_END", "3"))
 
         if self.training_data is None or self.training_data.empty:
@@ -55,7 +82,6 @@ class RetailDataProcessor:
         cutoff = max_date - pd.DateOffset(months=11)
         recent = self.training_data[self.training_data["year_month"] >= cutoff].copy()
 
-        # 未来行を追加 (target列は NaN)
         future_rows = []
         for store_type in self.training_data["store_type"].unique():
             for i in range(1, forecast_months + 1):
@@ -84,12 +110,10 @@ class RetailDataProcessor:
             base = base[: -len("/api/v2")]
         predict_url = f"{base}/api/v2/deployments/{deployment_id}/predictions"
 
-        # Step 1: スコアリングデータを動的に構築 (NaN行を確実に含める)
         scoring_df = self._build_scoring_data()
         scoring_csv_bytes = scoring_df.to_csv(index=False).encode("utf-8")
         print(f"Prediction API に {len(scoring_df)} 行を送信: {predict_url}")
 
-        # Step 2: Prediction API にCSVデータを送信
         headers = {
             "Authorization": f"Token {token}",
             "Content-Type": "text/csv; encoding=utf-8",
@@ -105,7 +129,7 @@ class RetailDataProcessor:
 
         print(f"Prediction API 成功: {len(pred_df)} 行, カラム: {list(pred_df.columns)}")
 
-        # キャッシュとして保存
+        # キャッシュ保存
         cache_path = os.path.join(self.base_path, "predictions_dataset.csv")
         try:
             os.makedirs(os.path.dirname(cache_path), exist_ok=True)
@@ -137,7 +161,6 @@ class RetailDataProcessor:
         try:
             data_source = (os.getenv("RETAIL_DATA_SOURCE") or "local").strip().lower()
 
-            # ローカル CSV パス (01_create_dataset.ipynb の出力名に準拠)
             training_path = os.path.join(self.base_path, "retail_sales_dataset.csv")
             actuals_path = os.path.join(self.base_path, "retail_sales_actuals.csv")
             predictions_path = os.path.join(self.base_path, "predictions_dataset.csv")
@@ -171,15 +194,11 @@ class RetailDataProcessor:
                             f"ローカル CSV ({self.base_path}) も AI Catalog も利用不可"
                         ) from ai_err
 
-            # 日付列のパース — カラム名 year_month (予測API呼び出し前に実行)
-            for df in [self.training_data, self.actuals_data]:
-                if "year_month" in df.columns:
-                    df["year_month"] = pd.to_datetime(df["year_month"])
-                elif "date" in df.columns:
-                    df.rename(columns={"date": "year_month"}, inplace=True)
-                    df["year_month"] = pd.to_datetime(df["year_month"])
+            # 日付パース — 予測API呼び出し前に実行 (DateOffset演算に必要)
+            self.training_data = self._parse_date_column(self.training_data)
+            self.actuals_data = self._parse_date_column(self.actuals_data)
 
-            # 予測データ: API → ローカルフォールバック
+            # 予測データ: API → ローカルキャッシュ → フォールバック
             try:
                 self.prediction_data = self._fetch_predictions_from_api()
                 print("予測データを DataRobot Prediction API から取得しました")
@@ -187,16 +206,14 @@ class RetailDataProcessor:
                 print(f"Prediction API 失敗 ({api_err}); ローカルにフォールバック")
                 if os.path.exists(predictions_path):
                     self.prediction_data = pd.read_csv(predictions_path)
+                    print(f"ローカルキャッシュから予測データ読み込み: {predictions_path}")
                 else:
                     print("警告: 予測データなし。実績のみで動作します。")
                     self.prediction_data = pd.DataFrame()
 
+            # 予測データの日付パース + tz-naive 統一
             if not self.prediction_data.empty:
-                if "year_month" in self.prediction_data.columns:
-                    self.prediction_data["year_month"] = pd.to_datetime(self.prediction_data["year_month"])
-                elif "date" in self.prediction_data.columns:
-                    self.prediction_data.rename(columns={"date": "year_month"}, inplace=True)
-                    self.prediction_data["year_month"] = pd.to_datetime(self.prediction_data["year_month"])
+                self.prediction_data = self._parse_date_column(self.prediction_data)
 
             self._merge_data()
             print(f"データ読み込み完了 ({self.data_source}): {len(self.merged_data)} レコード")
@@ -206,7 +223,7 @@ class RetailDataProcessor:
             raise
 
     # ------------------------------------------------------------------
-    # データマージ
+    # データマージ (ERCOT data_processor パターンに準拠)
     # ------------------------------------------------------------------
 
     def _merge_data(self):
@@ -219,18 +236,33 @@ class RetailDataProcessor:
             pred_col = None
             if not self.prediction_data.empty:
                 for candidate in [
-                    "sales_billion_yen_PREDICTION",
                     "sales_billion_yen (actual)_PREDICTION",
+                    "sales_billion_yen_PREDICTION",
                     "sales_billion_yen_prediction",
                     "sales_amount_PREDICTION",
                 ]:
                     if candidate in self.prediction_data.columns:
                         pred_col = candidate
                         break
+                # 上記に一致しない場合、_PREDICTION で終わるカラムを探す
+                if pred_col is None:
+                    for col in self.prediction_data.columns:
+                        if col.upper().endswith("_PREDICTION"):
+                            pred_col = col
+                            break
 
             if pred_col:
+                print(f"予測カラム: {pred_col}")
                 pred_subset = self.prediction_data.copy()
                 pred_subset.rename(columns={pred_col: "predicted_sales"}, inplace=True)
+
+                # FORECAST_DISTANCE で重複排除 (最短距離=最新予測を採用)
+                if "FORECAST_DISTANCE" in pred_subset.columns:
+                    pred_subset = pred_subset.sort_values("FORECAST_DISTANCE")
+                    pred_subset = pred_subset.drop_duplicates(
+                        subset=["store_type", "year_month"], keep="first"
+                    )
+                    print(f"FORECAST_DISTANCE重複排除後: {len(pred_subset)} レコード")
 
                 keep_cols = ["year_month", "store_type", "predicted_sales"]
                 for col in ["PREDICTION_90_PERCENTILE_LOW", "PREDICTION_90_PERCENTILE_HIGH"]:
@@ -245,6 +277,8 @@ class RetailDataProcessor:
                     on=["store_type", "year_month"], how="left",
                 )
             else:
+                if not self.prediction_data.empty:
+                    print(f"警告: 予測カラムが見つかりません。カラム一覧: {list(self.prediction_data.columns)}")
                 self.merged_data = all_actuals.copy()
                 self.merged_data["predicted_sales"] = np.nan
 
@@ -252,7 +286,7 @@ class RetailDataProcessor:
             pred_count = self.merged_data["predicted_sales"].notna().sum()
             print(f"予測あり: {pred_count} / {len(self.merged_data)} レコード")
 
-            # 予測誤差
+            # 予測誤差 (epsilon-safe)
             self.merged_data["forecast_error"] = (
                 self.merged_data["sales_billion_yen"] - self.merged_data["predicted_sales"]
             )
