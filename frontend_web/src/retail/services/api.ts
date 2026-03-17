@@ -91,14 +91,14 @@ export interface ErrorAnalysisResponse {
 // API Methods
 class RetailAPIService {
   async getStoreTypes(): Promise<string[]> {
-    const response = await apiClient.get('/retail/api/store-types');
+    const response = await apiClient.get('/retail/store-types');
     const raw = typeof response.data === 'string' ? JSON.parse(response.data) : response.data;
     const types = raw?.store_types;
     return Array.isArray(types) ? types : [];
   }
 
   async getDateRange(): Promise<{ start_date: string; end_date: string }> {
-    const response = await apiClient.get('/retail/api/date-range');
+    const response = await apiClient.get('/retail/date-range');
     const raw = typeof response.data === 'string' ? JSON.parse(response.data) : response.data;
     return {
       start_date: raw?.start_date || '',
@@ -111,14 +111,14 @@ class RetailAPIService {
     start_date?: string;
     end_date?: string;
   }): Promise<ForecastData[]> {
-    const response = await apiClient.get('/retail/api/forecast-data', { params });
+    const response = await apiClient.get('/retail/forecast-data', { params });
     const raw = typeof response.data === 'string' ? JSON.parse(response.data) : response.data;
     const data = raw?.data;
     return Array.isArray(data) ? data : [];
   }
 
   async getErrorMetrics(store_type: string): Promise<ErrorMetrics> {
-    const response = await apiClient.get('/retail/api/error-metrics', {
+    const response = await apiClient.get('/retail/error-metrics', {
       params: { store_type },
     });
     return response.data?.metrics;
@@ -130,7 +130,7 @@ class RetailAPIService {
   ): Promise<ErrorAnalysisResponse> {
     return new Promise((resolve, reject) => {
       const baseURL = API_BASE_URL.endsWith('/') ? API_BASE_URL : `${API_BASE_URL}/`;
-      const url = new URL('retail/api/analyze-error', baseURL).toString();
+      const url = new URL('retail/analyze-error', baseURL).toString();
 
       fetch(url, {
         method: 'POST',

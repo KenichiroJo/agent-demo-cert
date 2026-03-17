@@ -61,7 +61,7 @@ def _sse(event: str, data: Any) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
-@retail_router.get("/retail/api/store-types")
+@retail_router.get("/store-types")
 async def get_store_types():
     try:
         _ensure_initialized()
@@ -70,7 +70,7 @@ async def get_store_types():
     return {"status": "success", "store_types": _dp().get_store_types()}
 
 
-@retail_router.get("/retail/api/status")
+@retail_router.get("/status")
 async def get_status():
     status: Dict[str, Any] = {"initialized": False, "init_error": _init_error}
     try:
@@ -84,7 +84,7 @@ async def get_status():
     return status
 
 
-@retail_router.get("/retail/api/date-range")
+@retail_router.get("/date-range")
 async def get_date_range():
     try:
         _ensure_initialized()
@@ -94,7 +94,7 @@ async def get_date_range():
     return {"status": "success", "start_date": dr["start"], "end_date": dr["end"]}
 
 
-@retail_router.get("/retail/api/forecast-data")
+@retail_router.get("/forecast-data")
 async def get_forecast_data(
     store_type: Optional[str] = None,
     start_date: Optional[date] = None,
@@ -109,7 +109,7 @@ async def get_forecast_data(
     return clean_nan_values({"status": "success", "count": len(data), "data": data})
 
 
-@retail_router.get("/retail/api/error-metrics")
+@retail_router.get("/error-metrics")
 async def get_error_metrics(store_type: Optional[str] = None):
     try:
         _ensure_initialized()
@@ -119,7 +119,7 @@ async def get_error_metrics(store_type: Optional[str] = None):
     return clean_nan_values({"status": "success", "metrics": metrics})
 
 
-@retail_router.get("/retail/api/outliers")
+@retail_router.get("/outliers")
 async def get_outliers(store_type: Optional[str] = None, threshold: float = 2.0, limit: int = 100):
     try:
         _ensure_initialized()
@@ -197,7 +197,7 @@ async def _analyze_error_stream(request: ErrorAnalysisRequest):
     yield _sse("complete", response_data)
 
 
-@retail_router.post("/retail/api/analyze-error")
+@retail_router.post("/analyze-error")
 async def analyze_error(request: ErrorAnalysisRequest):
     return StreamingResponse(
         _analyze_error_stream(request),

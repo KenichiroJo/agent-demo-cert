@@ -37,7 +37,7 @@ base_router.include_router(api_router)
 
 try:
     from app.retail.router import retail_router
-    base_router.include_router(retail_router)
+    base_router.include_router(retail_router, prefix="/api/retail")
 except ImportError:
     pass
 
