@@ -41,11 +41,40 @@ class RetailDataProcessor:
     # DataRobot Prediction API
     # ------------------------------------------------------------------
 
+    def _build_scoring_data(self) -> pd.DataFrame:
+        """学習データから予測用スコアリングデータを構築する。
+        直近12ヶ月の実績 + 未来3ヶ月の空行（target=NaN）。
+        AI Catalog のCSVは NaN行が欠落する場合があるため、動的に生成する。
+        """
+        forecast_months = int(os.getenv("FORECAST_WINDOW_END", "3"))
+
+        if self.training_data is None or self.training_data.empty:
+            raise RuntimeError("学習データが読み込まれていません")
+
+        max_date = self.training_data["year_month"].max()
+        cutoff = max_date - pd.DateOffset(months=11)
+        recent = self.training_data[self.training_data["year_month"] >= cutoff].copy()
+
+        # 未来行を追加 (target列は NaN)
+        future_rows = []
+        for store_type in self.training_data["store_type"].unique():
+            for i in range(1, forecast_months + 1):
+                future_date = max_date + pd.DateOffset(months=i)
+                row: dict = {"year_month": future_date, "store_type": store_type}
+                for col in recent.columns:
+                    if col not in ("year_month", "store_type"):
+                        row[col] = np.nan
+                future_rows.append(row)
+
+        scoring_df = pd.concat([recent, pd.DataFrame(future_rows)], ignore_index=True)
+        scoring_df = scoring_df.sort_values(["store_type", "year_month"]).reset_index(drop=True)
+        print(f"スコアリングデータ構築: {len(recent)} 実績行 + {len(future_rows)} 未来行 = {len(scoring_df)} 行")
+        return scoring_df
+
     def _fetch_predictions_from_api(self) -> pd.DataFrame:
         endpoint = os.getenv("DATAROBOT_ENDPOINT", "").rstrip("/")
         token = os.getenv("DATAROBOT_API_TOKEN", "")
         deployment_id = os.getenv("FORECAST_DEPLOYMENT_ID", "")
-        dataset_id = os.getenv("SCORING_DATASET_ID", "")
 
         if not all([endpoint, token, deployment_id]):
             raise RuntimeError("予測 API に必要な環境変数が不足しています")
@@ -55,17 +84,10 @@ class RetailDataProcessor:
             base = base[: -len("/api/v2")]
         predict_url = f"{base}/api/v2/deployments/{deployment_id}/predictions"
 
-        # Step 1: スコアリングCSVを取得 (AI Catalog or ローカル)
-        if dataset_id:
-            scoring_df = self._download_ai_catalog_csv(dataset_id)
-        else:
-            scoring_path = os.path.join(self.base_path, "retail_sales_scoring.csv")
-            if not os.path.exists(scoring_path):
-                raise RuntimeError("スコアリングデータが見つかりません")
-            scoring_df = pd.read_csv(scoring_path)
-
+        # Step 1: スコアリングデータを動的に構築 (NaN行を確実に含める)
+        scoring_df = self._build_scoring_data()
         scoring_csv_bytes = scoring_df.to_csv(index=False).encode("utf-8")
-        print(f"スコアリングデータ: {len(scoring_df)} 行を Prediction API に送信")
+        print(f"Prediction API に {len(scoring_df)} 行を送信: {predict_url}")
 
         # Step 2: Prediction API にCSVデータを送信
         headers = {
@@ -76,8 +98,12 @@ class RetailDataProcessor:
 
         with httpx.Client(follow_redirects=True, timeout=180.0) as client:
             resp = client.post(predict_url, content=scoring_csv_bytes, headers=headers)
+            if resp.status_code != 200:
+                print(f"Prediction API エラー ({resp.status_code}): {resp.text[:1000]}")
             resp.raise_for_status()
             pred_df = pd.read_csv(io.BytesIO(resp.content))
+
+        print(f"Prediction API 成功: {len(pred_df)} 行, カラム: {list(pred_df.columns)}")
 
         # キャッシュとして保存
         cache_path = os.path.join(self.base_path, "predictions_dataset.csv")
