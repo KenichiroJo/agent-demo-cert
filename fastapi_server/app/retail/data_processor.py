@@ -47,7 +47,7 @@ class RetailDataProcessor:
         deployment_id = os.getenv("FORECAST_DEPLOYMENT_ID", "")
         dataset_id = os.getenv("SCORING_DATASET_ID", "")
 
-        if not all([endpoint, token, deployment_id, dataset_id]):
+        if not all([endpoint, token, deployment_id]):
             raise RuntimeError("予測 API に必要な環境変数が不足しています")
 
         base = endpoint.rstrip("/")
@@ -55,17 +55,40 @@ class RetailDataProcessor:
             base = base[: -len("/api/v2")]
         predict_url = f"{base}/api/v2/deployments/{deployment_id}/predictions"
 
+        # Step 1: スコアリングCSVを取得 (AI Catalog or ローカル)
+        if dataset_id:
+            scoring_df = self._download_ai_catalog_csv(dataset_id)
+        else:
+            scoring_path = os.path.join(self.base_path, "retail_sales_scoring.csv")
+            if not os.path.exists(scoring_path):
+                raise RuntimeError("スコアリングデータが見つかりません")
+            scoring_df = pd.read_csv(scoring_path)
+
+        scoring_csv_bytes = scoring_df.to_csv(index=False).encode("utf-8")
+        print(f"スコアリングデータ: {len(scoring_df)} 行を Prediction API に送信")
+
+        # Step 2: Prediction API にCSVデータを送信
         headers = {
             "Authorization": f"Token {token}",
-            "x-datarobot-api-token": token,
-            "Content-Type": "application/json",
+            "Content-Type": "text/csv; encoding=utf-8",
             "Accept": "text/csv",
         }
 
-        with httpx.Client(follow_redirects=True, timeout=120.0) as client:
-            resp = client.post(predict_url, json={"datasetId": dataset_id}, headers=headers)
+        with httpx.Client(follow_redirects=True, timeout=180.0) as client:
+            resp = client.post(predict_url, content=scoring_csv_bytes, headers=headers)
             resp.raise_for_status()
-            return pd.read_csv(io.BytesIO(resp.content))
+            pred_df = pd.read_csv(io.BytesIO(resp.content))
+
+        # キャッシュとして保存
+        cache_path = os.path.join(self.base_path, "predictions_dataset.csv")
+        try:
+            os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+            pred_df.to_csv(cache_path, index=False)
+            print(f"予測キャッシュ保存: {cache_path}")
+        except Exception:
+            pass
+
+        return pred_df
 
     def _download_ai_catalog_csv(self, dataset_id: str) -> pd.DataFrame:
         endpoint = os.getenv("DATAROBOT_ENDPOINT", "").rstrip("/")
@@ -244,10 +267,6 @@ class RetailDataProcessor:
             data = data[data["date_only"] >= start_date]
         if end_date:
             data = data[data["date_only"] <= end_date]
-
-        # 予測がある場合は予測ありのみ、無い場合は全件
-        if data["predicted_sales"].notna().any():
-            data = data[data["predicted_sales"].notna()]
 
         data = data.sort_values("year_month")
         if limit:
