@@ -171,6 +171,14 @@ class RetailDataProcessor:
                             f"ローカル CSV ({self.base_path}) も AI Catalog も利用不可"
                         ) from ai_err
 
+            # 日付列のパース — カラム名 year_month (予測API呼び出し前に実行)
+            for df in [self.training_data, self.actuals_data]:
+                if "year_month" in df.columns:
+                    df["year_month"] = pd.to_datetime(df["year_month"])
+                elif "date" in df.columns:
+                    df.rename(columns={"date": "year_month"}, inplace=True)
+                    df["year_month"] = pd.to_datetime(df["year_month"])
+
             # 予測データ: API → ローカルフォールバック
             try:
                 self.prediction_data = self._fetch_predictions_from_api()
@@ -182,14 +190,6 @@ class RetailDataProcessor:
                 else:
                     print("警告: 予測データなし。実績のみで動作します。")
                     self.prediction_data = pd.DataFrame()
-
-            # 日付列のパース — カラム名 year_month
-            for df in [self.training_data, self.actuals_data]:
-                if "year_month" in df.columns:
-                    df["year_month"] = pd.to_datetime(df["year_month"])
-                elif "date" in df.columns:
-                    df.rename(columns={"date": "year_month"}, inplace=True)
-                    df["year_month"] = pd.to_datetime(df["year_month"])
 
             if not self.prediction_data.empty:
                 if "year_month" in self.prediction_data.columns:
