@@ -35,6 +35,12 @@ base_router = APIRouter()
 
 base_router.include_router(api_router)
 
+try:
+    from app.retail.router import retail_router
+    base_router.include_router(retail_router)
+except ImportError:
+    pass
+
 logger = logging.getLogger(__name__)
 
 ROOT_DIR = Path(__file__).parent.parent
