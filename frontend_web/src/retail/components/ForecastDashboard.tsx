@@ -94,21 +94,31 @@ const ForecastDashboard: React.FC = () => {
   }, [selectedStoreType, startDate, endDate]);
 
   const handleAnalyzeError = useCallback(async (point: ForecastData) => {
+    console.log('[Dashboard] handleAnalyzeError called:', {
+      store_type: point.store_type,
+      date: point.date,
+      predicted_sales: point.predicted_sales,
+    });
+
     setLoading((prev) => ({ ...prev, analysis: true }));
     setAnalysis(null);
     setAnalysisProgress('分析を開始しています...');
 
     try {
+      console.log('[Dashboard] Calling analyzeError API...');
       const result = await retailApiService.analyzeError(
         { store_type: point.store_type, date: point.date },
         (status: string, elapsed?: number) => {
+          console.log('[Dashboard] SSE progress:', status, elapsed);
           if (status === 'started') setAnalysisProgress('AI 分析エージェントを呼び出し中...');
           else if (status === 'processing') setAnalysisProgress(`処理中... (${elapsed}秒経過)`);
         }
       );
+      console.log('[Dashboard] Analysis complete:', result?.store_type, result?.date);
       setAnalysis(result);
       setAnalysisProgress('');
     } catch (err: any) {
+      console.error('[Dashboard] Analysis error:', err);
       setAnalysisProgress('');
       setError(err?.message || '分析に失敗しました');
     } finally {

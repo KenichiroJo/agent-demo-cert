@@ -42,8 +42,7 @@ const ForecastChart: React.FC<ForecastChartProps> = ({
   error = null,
   onPointClick,
 }) => {
-  // 最後にクリックしたポイントを表示用に保持（分析は即実行）
-  const lastClickedRef = useRef<string | null>(null);
+  const analysisTriggeredRef = useRef(false);
 
   // 誤差の統計を計算 (ドットサイズスケーリング用)
   const errorStats = useMemo(() => {
@@ -93,9 +92,26 @@ const ForecastChart: React.FC<ForecastChartProps> = ({
   // ワンクリック: チャートクリック → 即座に onPointClick を呼び出して分析開始
   const triggerAnalysis = useCallback(
     (point: ForecastData) => {
+      console.log('[ForecastChart] triggerAnalysis called:', {
+        store_type: point.store_type,
+        date: point.date,
+        predicted_sales: point.predicted_sales,
+        hasOnPointClick: !!onPointClick,
+      });
+
       if (onPointClick && point.predicted_sales != null) {
-        lastClickedRef.current = point.date;
+        // 重複トリガー防止
+        if (analysisTriggeredRef.current) {
+          console.log('[ForecastChart] Analysis already triggered, skipping');
+          return;
+        }
+        analysisTriggeredRef.current = true;
+        setTimeout(() => { analysisTriggeredRef.current = false; }, 2000);
+
+        console.log('[ForecastChart] Calling onPointClick...');
         onPointClick(point);
+      } else {
+        console.log('[ForecastChart] Skipped: onPointClick=', !!onPointClick, 'predicted_sales=', point.predicted_sales);
       }
     },
     [onPointClick]
@@ -136,14 +152,23 @@ const ForecastChart: React.FC<ForecastChartProps> = ({
           stroke="#fff"
           strokeWidth={radius > 3 ? 1.5 : 0}
           style={{ cursor: 'pointer' }}
-          onClick={(e) => {
-            e.stopPropagation();
-            triggerAnalysis(payload as ForecastData);
-          }}
         />
       );
     },
-    [errorStats, triggerAnalysis]
+    [errorStats]
+  );
+
+  // activeDot クリックハンドラ (Recharts が activeDot の onClick に渡す引数)
+  const handleActiveDotClick = useCallback(
+    (dotData: any, _index: number, e: React.MouseEvent) => {
+      e?.stopPropagation?.();
+      const point = dotData?.payload || dotData;
+      console.log('[ForecastChart] activeDot clicked:', point?.date, point?.store_type);
+      if (point) {
+        triggerAnalysis(point as ForecastData);
+      }
+    },
+    [triggerAnalysis]
   );
 
   const CustomTooltip = ({ active, payload, label }: any) => {
@@ -232,12 +257,13 @@ const ForecastChart: React.FC<ForecastChartProps> = ({
         )}
       </div>
 
-      <div className="select-none">
+      <div>
         <ResponsiveContainer width="100%" height={420}>
           <ComposedChart
             data={chartData}
             margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
             onClick={(chartState: any) => {
+              console.log('[ForecastChart] ComposedChart onClick fired', chartState?.activePayload?.length);
               if (chartState?.activePayload?.length > 0) {
                 const pt = chartState.activePayload[0].payload as ForecastData;
                 triggerAnalysis(pt);
@@ -301,7 +327,14 @@ const ForecastChart: React.FC<ForecastChartProps> = ({
               name="予測売上"
               strokeDasharray="5 5"
               dot={{ r: 2, fill: CHART_COLORS.predicted }}
-              activeDot={{ r: 5, fill: CHART_COLORS.predicted, stroke: '#fff', strokeWidth: 2 }}
+              activeDot={{
+                r: 5,
+                fill: CHART_COLORS.predicted,
+                stroke: '#fff',
+                strokeWidth: 2,
+                cursor: 'pointer',
+                onClick: handleActiveDotClick,
+              }}
               isAnimationActive={false}
               connectNulls={false}
             />
@@ -320,6 +353,7 @@ const ForecastChart: React.FC<ForecastChartProps> = ({
                 stroke: '#fff',
                 strokeWidth: 2,
                 cursor: 'pointer',
+                onClick: handleActiveDotClick,
               }}
               isAnimationActive={false}
             />
