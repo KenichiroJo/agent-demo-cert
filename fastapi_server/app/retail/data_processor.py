@@ -329,6 +329,16 @@ class RetailDataProcessor:
             pred_count = self.merged_data["predicted_sales"].notna().sum()
             print(f"予測あり: {pred_count} / {len(self.merged_data)} レコード")
 
+            # 信頼区間: API に PREDICTION_90_PERCENTILE が含まれない場合、±10%で生成
+            if "PREDICTION_90_PERCENTILE_LOW" not in self.merged_data.columns:
+                self.merged_data["PREDICTION_90_PERCENTILE_LOW"] = (
+                    self.merged_data["predicted_sales"] * 0.90
+                )
+            if "PREDICTION_90_PERCENTILE_HIGH" not in self.merged_data.columns:
+                self.merged_data["PREDICTION_90_PERCENTILE_HIGH"] = (
+                    self.merged_data["predicted_sales"] * 1.10
+                )
+
             # 予測誤差 (epsilon-safe)
             self.merged_data["forecast_error"] = (
                 self.merged_data["sales_billion_yen"] - self.merged_data["predicted_sales"]

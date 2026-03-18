@@ -1,6 +1,8 @@
 /**
- * 予測 vs 実績 チャートコンポーネント
- * Recharts を使用したインタラクティブな折れ線グラフ
+ * 予測 vs 実績 チャートコンポーネント (ERCOT スタイル)
+ * - 信頼区間バンド (グレー背景)
+ * - 誤差比例ドットサイズ (大きい誤差 = 大きいドット + 色変化)
+ * - クリックで誤差分析起動
  */
 
 import React, { useMemo, useState, useCallback } from 'react';
@@ -14,6 +16,7 @@ import {
   ResponsiveContainer,
   Area,
   ComposedChart,
+  ReferenceArea,
 } from 'recharts';
 import type { ForecastData } from '../services/api';
 
@@ -23,6 +26,8 @@ const CHART_COLORS = {
   confidence: '#6B7280',
   grid: '#374151',
   text: '#9CA3AF',
+  errorHigh: '#EF4444',
+  errorMed: '#F59E0B',
 };
 
 interface ForecastChartProps {
@@ -40,6 +45,20 @@ const ForecastChart: React.FC<ForecastChartProps> = ({
 }) => {
   const [selectedPoint, setSelectedPoint] = useState<ForecastData | null>(null);
 
+  // 誤差の統計を計算 (ドットサイズスケーリング用)
+  const errorStats = useMemo(() => {
+    const absErrors = data
+      .map((d) => Math.abs(d.pct_error || 0))
+      .filter((e) => e > 0);
+    if (absErrors.length === 0) return { max: 1, p75: 1, p50: 1 };
+    const sorted = [...absErrors].sort((a, b) => a - b);
+    return {
+      max: sorted[sorted.length - 1],
+      p75: sorted[Math.floor(sorted.length * 0.75)] || 1,
+      p50: sorted[Math.floor(sorted.length * 0.5)] || 1,
+    };
+  }, [data]);
+
   const chartData = useMemo(() => {
     return data.map((point) => ({
       ...point,
@@ -48,26 +67,69 @@ const ForecastChart: React.FC<ForecastChartProps> = ({
         month: 'short',
       }),
       fullDate: point.date,
-      errorMagnitude: Math.abs(point.error || 0),
+      absPctError: Math.abs(point.pct_error || 0),
     }));
   }, [data]);
 
   const stats = useMemo(() => {
     if (data.length === 0) return null;
-    const errors = data.map((d) => Math.abs(d.error || 0)).filter((e) => e > 0);
+    const withPred = data.filter((d) => d.predicted_sales != null && d.actual_sales != null);
+    const errors = withPred.map((d) => d.error || 0).filter((e) => e !== 0);
     if (errors.length === 0) return null;
     const rmse = Math.sqrt(errors.reduce((sum, e) => sum + e * e, 0) / errors.length);
-    const mae = errors.reduce((sum, e) => sum + e, 0) / errors.length;
-    const pctErrors = data.map((d) => Math.abs(d.pct_error || 0)).filter((e) => e > 0);
+    const mae = errors.reduce((sum, e) => sum + Math.abs(e), 0) / errors.length;
+    const pctErrors = withPred.map((d) => Math.abs(d.pct_error || 0)).filter((e) => e > 0);
     const mape = pctErrors.length > 0 ? pctErrors.reduce((sum, e) => sum + e, 0) / pctErrors.length : 0;
-    return { rmse: rmse.toFixed(1), mae: mae.toFixed(1), mape: mape.toFixed(1), count: errors.length };
+    const maxErr = Math.max(...errors.map(Math.abs));
+    return {
+      rmse: rmse.toFixed(2),
+      mae: mae.toFixed(2),
+      mape: mape.toFixed(1),
+      maxError: maxErr.toFixed(2),
+      count: errors.length,
+    };
   }, [data]);
 
-  const handleChartClick = useCallback((chartState: any) => {
-    if (chartState?.activePayload?.length > 0) {
-      setSelectedPoint(chartState.activePayload[0].payload as ForecastData);
+  // ERCOTスタイル: 誤差の大きさに応じたドットサイズ・色を返すカスタムドット
+  const CustomActualDot = useCallback((props: any) => {
+    const { cx, cy, payload } = props;
+    if (cx == null || cy == null) return null;
+
+    const absPct = Math.abs(payload?.pct_error || 0);
+    const hasPrediction = payload?.predicted_sales != null;
+
+    // 予測がない期間はデフォルト小ドット
+    if (!hasPrediction) {
+      return <circle cx={cx} cy={cy} r={3} fill={CHART_COLORS.actual} stroke="none" />;
     }
-  }, []);
+
+    // 誤差レベルに応じたサイズ・色
+    let radius = 3;
+    let color = CHART_COLORS.actual;
+
+    if (absPct > errorStats.p75) {
+      radius = 7;
+      color = CHART_COLORS.errorHigh; // 赤
+    } else if (absPct > errorStats.p50) {
+      radius = 5;
+      color = CHART_COLORS.errorMed; // 黄
+    }
+
+    return (
+      <circle
+        cx={cx}
+        cy={cy}
+        r={radius}
+        fill={color}
+        stroke="#fff"
+        strokeWidth={radius > 3 ? 1.5 : 0}
+        style={{ cursor: 'pointer' }}
+        onClick={() => {
+          setSelectedPoint(payload as ForecastData);
+        }}
+      />
+    );
+  }, [errorStats]);
 
   const handleAnalyze = useCallback(() => {
     if (selectedPoint && onPointClick) {
@@ -79,18 +141,27 @@ const ForecastChart: React.FC<ForecastChartProps> = ({
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload?.length) {
       const d = payload[0].payload;
+      const hasPred = d.predicted_sales != null;
       return (
         <div className="rounded-lg border border-gray-600 bg-gray-800 p-3 text-sm shadow-lg">
           <p className="mb-2 font-medium text-white">{label}</p>
           <div className="flex flex-col gap-1">
-            {d.actual_sales != null && <p className="text-orange-400">実績: {d.actual_sales.toFixed(1)} 億円</p>}
-            {d.predicted_sales != null && <p className="text-purple-400">予測: {d.predicted_sales.toFixed(1)} 億円</p>}
-            {d.error != null && (
-              <p className={Math.abs(d.error) > 5 ? 'text-red-400' : 'text-gray-400'}>
-                誤差: {d.error.toFixed(1)} 億円 ({d.pct_error?.toFixed(1)}%)
+            {d.actual_sales != null && (
+              <p className="text-orange-400">実績: {d.actual_sales.toFixed(2)} 億円</p>
+            )}
+            {hasPred && (
+              <p className="text-purple-400">予測: {d.predicted_sales.toFixed(2)} 億円</p>
+            )}
+            {hasPred && d.error != null && (
+              <p className={Math.abs(d.pct_error || 0) > 5 ? 'text-red-400' : 'text-gray-400'}>
+                誤差: {Math.abs(d.error).toFixed(2)} 億円 ({Math.abs(d.pct_error || 0).toFixed(1)}%)
               </p>
             )}
-            <p className="mt-1 text-xs text-blue-400">クリックで誤差分析を実行 →</p>
+            {hasPred && (
+              <p className="mt-1 cursor-pointer text-xs text-blue-400 hover:underline">
+                クリックで誤差分析を実行 →
+              </p>
+            )}
           </div>
         </div>
       );
@@ -131,52 +202,170 @@ const ForecastChart: React.FC<ForecastChartProps> = ({
         <h2 className="text-lg font-semibold text-white">予測 vs 実績 売上推移</h2>
         {stats && (
           <div className="flex flex-wrap gap-2">
-            <span className={`rounded-full px-3 py-1 text-xs font-medium ${parseFloat(stats.rmse) > 10 ? 'bg-red-900/50 text-red-300' : 'bg-green-900/50 text-green-300'}`}>
+            <span
+              className={`rounded-full px-3 py-1 text-xs font-medium ${
+                parseFloat(stats.rmse) > 0.5
+                  ? 'bg-red-900/50 text-red-300'
+                  : 'bg-green-900/50 text-green-300'
+              }`}
+            >
               RMSE: {stats.rmse}
             </span>
-            <span className="rounded-full bg-gray-700 px-3 py-1 text-xs font-medium text-gray-300">MAE: {stats.mae}</span>
-            <span className="rounded-full bg-gray-700 px-3 py-1 text-xs font-medium text-gray-300">MAPE: {stats.mape}%</span>
+            <span className="rounded-full bg-gray-700 px-3 py-1 text-xs font-medium text-gray-300">
+              MAE: {stats.mae}
+            </span>
+            <span className="rounded-full bg-gray-700 px-3 py-1 text-xs font-medium text-gray-300">
+              MAPE: {stats.mape}%
+            </span>
+            <span className="rounded-full bg-gray-700 px-3 py-1 text-xs font-medium text-gray-300">
+              最大誤差: {stats.maxError}億円
+            </span>
           </div>
         )}
       </div>
 
       <div className="select-none">
-        <ResponsiveContainer width="100%" height={400}>
-          <ComposedChart data={chartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }} onClick={handleChartClick} style={{ cursor: 'crosshair' }}>
+        <ResponsiveContainer width="100%" height={420}>
+          <ComposedChart
+            data={chartData}
+            margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+            onClick={(chartState: any) => {
+              if (chartState?.activePayload?.length > 0) {
+                const pt = chartState.activePayload[0].payload as ForecastData;
+                if (pt.predicted_sales != null) {
+                  setSelectedPoint(pt);
+                }
+              }
+            }}
+            style={{ cursor: 'crosshair' }}
+          >
             <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
-            <XAxis dataKey="displayDate" tick={{ fontSize: 11, fill: CHART_COLORS.text }} angle={-45} textAnchor="end" height={60} stroke={CHART_COLORS.grid} />
+            <XAxis
+              dataKey="displayDate"
+              tick={{ fontSize: 11, fill: CHART_COLORS.text }}
+              angle={-45}
+              textAnchor="end"
+              height={60}
+              stroke={CHART_COLORS.grid}
+            />
             <YAxis
-              label={{ value: '売上高（億円）', angle: -90, position: 'insideLeft', style: { fill: CHART_COLORS.text, fontSize: 12 } }}
+              label={{
+                value: '売上高（億円）',
+                angle: -90,
+                position: 'insideLeft',
+                style: { fill: CHART_COLORS.text, fontSize: 12 },
+              }}
               tick={{ fontSize: 11, fill: CHART_COLORS.text }}
               stroke={CHART_COLORS.grid}
             />
-            <Tooltip content={<CustomTooltip />} cursor={{ stroke: CHART_COLORS.actual, strokeWidth: 1, strokeDasharray: '5 5' }} />
+            <Tooltip
+              content={<CustomTooltip />}
+              cursor={{ stroke: CHART_COLORS.predicted, strokeWidth: 1, strokeDasharray: '5 5' }}
+            />
             <Legend wrapperStyle={{ paddingTop: '20px', fontSize: '12px' }} iconType="line" />
-            <Area type="monotone" dataKey="confidence_high" stroke="none" fill={CHART_COLORS.confidence} fillOpacity={0.1} name="90%信頼区間(上限)" isAnimationActive={false} />
-            <Area type="monotone" dataKey="confidence_low" stroke="none" fill={CHART_COLORS.confidence} fillOpacity={0.1} name="90%信頼区間(下限)" isAnimationActive={false} />
-            <Line type="monotone" dataKey="actual_sales" stroke={CHART_COLORS.actual} strokeWidth={2} name="実績売上" dot={{ r: 3, fill: CHART_COLORS.actual }} activeDot={{ r: 6, fill: CHART_COLORS.actual, stroke: '#fff', strokeWidth: 2 }} isAnimationActive={false} />
-            <Line type="monotone" dataKey="predicted_sales" stroke={CHART_COLORS.predicted} strokeWidth={2} name="予測売上" strokeDasharray="5 5" dot={{ r: 3, fill: CHART_COLORS.predicted }} activeDot={{ r: 6, fill: CHART_COLORS.predicted, stroke: '#fff', strokeWidth: 2 }} isAnimationActive={false} />
+
+            {/* 信頼区間バンド (灰色背景) */}
+            <Area
+              type="monotone"
+              dataKey="confidence_high"
+              stroke="none"
+              fill={CHART_COLORS.confidence}
+              fillOpacity={0.15}
+              name="90%信頼区間(上限)"
+              isAnimationActive={false}
+              connectNulls={false}
+            />
+            <Area
+              type="monotone"
+              dataKey="confidence_low"
+              stroke="none"
+              fill="#1F2937"
+              fillOpacity={0.8}
+              name="90%信頼区間(下限)"
+              isAnimationActive={false}
+              connectNulls={false}
+            />
+
+            {/* 予測線 (紫・点線) */}
+            <Line
+              type="monotone"
+              dataKey="predicted_sales"
+              stroke={CHART_COLORS.predicted}
+              strokeWidth={2}
+              name="予測売上"
+              strokeDasharray="5 5"
+              dot={{ r: 2, fill: CHART_COLORS.predicted }}
+              activeDot={{ r: 5, fill: CHART_COLORS.predicted, stroke: '#fff', strokeWidth: 2 }}
+              isAnimationActive={false}
+              connectNulls={false}
+            />
+
+            {/* 実績線 (オレンジ・誤差比例ドット) */}
+            <Line
+              type="monotone"
+              dataKey="actual_sales"
+              stroke={CHART_COLORS.actual}
+              strokeWidth={2}
+              name="実績売上"
+              dot={<CustomActualDot />}
+              activeDot={{
+                r: 8,
+                fill: CHART_COLORS.actual,
+                stroke: '#fff',
+                strokeWidth: 2,
+                cursor: 'pointer',
+              }}
+              isAnimationActive={false}
+            />
           </ComposedChart>
         </ResponsiveContainer>
       </div>
 
+      {/* 選択ポイント詳細パネル */}
       {selectedPoint && (
         <div className="mt-4 rounded-lg border border-purple-700/50 bg-purple-900/20 p-4">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-white">
-                選択: {selectedPoint.store_type} — {new Date(selectedPoint.date).toLocaleDateString('ja-JP')}
+                選択: {selectedPoint.store_type} —{' '}
+                {new Date(selectedPoint.date).toLocaleDateString('ja-JP', {
+                  year: 'numeric',
+                  month: 'long',
+                })}
               </p>
               <p className="text-sm text-gray-400">
-                実績: {selectedPoint.actual_sales?.toFixed(1)}億円 / 予測: {selectedPoint.predicted_sales?.toFixed(1)}億円 / 誤差: {Math.abs(selectedPoint.error || 0).toFixed(1)}億円
+                実績: {selectedPoint.actual_sales?.toFixed(2)}億円 / 予測:{' '}
+                {selectedPoint.predicted_sales?.toFixed(2)}億円 / 誤差:{' '}
+                {Math.abs(selectedPoint.error || 0).toFixed(2)}億円 (
+                {Math.abs(selectedPoint.pct_error || 0).toFixed(1)}%)
               </p>
             </div>
-            <button onClick={handleAnalyze} className="rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-purple-500">
-              誤差分析を実行
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setSelectedPoint(null)}
+                className="rounded-lg border border-gray-600 px-3 py-2 text-sm text-gray-300 transition-colors hover:bg-gray-700"
+              >
+                閉じる
+              </button>
+              <button
+                onClick={handleAnalyze}
+                className="rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-purple-500"
+              >
+                🔍 誤差分析を実行
+              </button>
+            </div>
           </div>
         </div>
       )}
+
+      {/* ヒントテキスト */}
+      <div className="mt-3 rounded-lg border border-blue-800/30 bg-blue-900/10 p-3">
+        <p className="text-sm text-blue-300">
+          💡 チャート上の任意のデータポイントをクリックすると、AI による予測誤差の{' '}
+          <strong>根本原因分析</strong>を実行できます。季節変動、消費者動向、外部経済要因などを
+          考慮した分析結果が表示されます。
+        </p>
+      </div>
     </div>
   );
 };
