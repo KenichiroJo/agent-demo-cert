@@ -2,10 +2,10 @@
  * 予測 vs 実績 チャートコンポーネント (ERCOT スタイル)
  * - 信頼区間バンド (グレー背景)
  * - 誤差比例ドットサイズ (大きい誤差 = 大きいドット + 色変化)
- * - クリックで誤差分析起動
+ * - ワンクリックで即座に誤差分析起動
  */
 
-import React, { useMemo, useState, useCallback } from 'react';
+import React, { useMemo, useCallback, useRef } from 'react';
 import {
   Line,
   XAxis,
@@ -16,7 +16,6 @@ import {
   ResponsiveContainer,
   Area,
   ComposedChart,
-  ReferenceArea,
 } from 'recharts';
 import type { ForecastData } from '../services/api';
 
@@ -43,7 +42,8 @@ const ForecastChart: React.FC<ForecastChartProps> = ({
   error = null,
   onPointClick,
 }) => {
-  const [selectedPoint, setSelectedPoint] = useState<ForecastData | null>(null);
+  // 最後にクリックしたポイントを表示用に保持（分析は即実行）
+  const lastClickedRef = useRef<string | null>(null);
 
   // 誤差の統計を計算 (ドットサイズスケーリング用)
   const errorStats = useMemo(() => {
@@ -90,61 +90,61 @@ const ForecastChart: React.FC<ForecastChartProps> = ({
     };
   }, [data]);
 
-  // ERCOTスタイル: 誤差の大きさに応じたドットサイズ・色を返すカスタムドット
-  const CustomActualDot = useCallback((props: any) => {
-    const { cx, cy, payload } = props;
-    if (cx == null || cy == null) return null;
-
-    const absPct = Math.abs(payload?.pct_error || 0);
-    const hasPrediction = payload?.predicted_sales != null;
-
-    // 予測がない期間はデフォルト小ドット
-    if (!hasPrediction) {
-      return <circle cx={cx} cy={cy} r={3} fill={CHART_COLORS.actual} stroke="none" />;
-    }
-
-    // 誤差レベルに応じたサイズ・色
-    let radius = 3;
-    let color = CHART_COLORS.actual;
-
-    if (absPct > errorStats.p75) {
-      radius = 7;
-      color = CHART_COLORS.errorHigh; // 赤
-    } else if (absPct > errorStats.p50) {
-      radius = 5;
-      color = CHART_COLORS.errorMed; // 黄
-    }
-
-    return (
-      <circle
-        cx={cx}
-        cy={cy}
-        r={radius}
-        fill={color}
-        stroke="#fff"
-        strokeWidth={radius > 3 ? 1.5 : 0}
-        style={{ cursor: 'pointer' }}
-        onClick={() => {
-          setSelectedPoint(payload as ForecastData);
-        }}
-      />
-    );
-  }, [errorStats]);
-
-  // チャートクリックで即座に分析パネルを表示（ワンクリック動作）
-  const handleChartClick = useCallback(
+  // ワンクリック: チャートクリック → 即座に onPointClick を呼び出して分析開始
+  const triggerAnalysis = useCallback(
     (point: ForecastData) => {
-      setSelectedPoint(point);
+      if (onPointClick && point.predicted_sales != null) {
+        lastClickedRef.current = point.date;
+        onPointClick(point);
+      }
     },
-    []
+    [onPointClick]
   );
 
-  const handleAnalyze = useCallback(() => {
-    if (selectedPoint && onPointClick) {
-      onPointClick(selectedPoint);
-      setSelectedPoint(null);
-    }
-  }, [selectedPoint, onPointClick]);
+  // ERCOTスタイル: 誤差の大きさに応じたドットサイズ・色を返すカスタムドット
+  const CustomActualDot = useCallback(
+    (props: any) => {
+      const { cx, cy, payload } = props;
+      if (cx == null || cy == null) return null;
+
+      const absPct = Math.abs(payload?.pct_error || 0);
+      const hasPrediction = payload?.predicted_sales != null;
+
+      // 予測がない期間はデフォルト小ドット
+      if (!hasPrediction) {
+        return <circle cx={cx} cy={cy} r={3} fill={CHART_COLORS.actual} stroke="none" />;
+      }
+
+      // 誤差レベルに応じたサイズ・色
+      let radius = 3;
+      let color = CHART_COLORS.actual;
+
+      if (absPct > errorStats.p75) {
+        radius = 7;
+        color = CHART_COLORS.errorHigh; // 赤
+      } else if (absPct > errorStats.p50) {
+        radius = 5;
+        color = CHART_COLORS.errorMed; // 黄
+      }
+
+      return (
+        <circle
+          cx={cx}
+          cy={cy}
+          r={radius}
+          fill={color}
+          stroke="#fff"
+          strokeWidth={radius > 3 ? 1.5 : 0}
+          style={{ cursor: 'pointer' }}
+          onClick={(e) => {
+            e.stopPropagation();
+            triggerAnalysis(payload as ForecastData);
+          }}
+        />
+      );
+    },
+    [errorStats, triggerAnalysis]
+  );
 
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload?.length) {
@@ -166,8 +166,8 @@ const ForecastChart: React.FC<ForecastChartProps> = ({
               </p>
             )}
             {hasPred && (
-              <p className="mt-1 text-xs text-gray-500 italic">
-                ※ クリックで選択 → 下のパネルから分析実行
+              <p className="mt-1 text-xs text-gray-500">
+                クリックで即座に AI 分析開始
               </p>
             )}
           </div>
@@ -240,9 +240,7 @@ const ForecastChart: React.FC<ForecastChartProps> = ({
             onClick={(chartState: any) => {
               if (chartState?.activePayload?.length > 0) {
                 const pt = chartState.activePayload[0].payload as ForecastData;
-                if (pt.predicted_sales != null) {
-                  handleChartClick(pt);
-                }
+                triggerAnalysis(pt);
               }
             }}
             style={{ cursor: 'crosshair' }}
@@ -329,61 +327,11 @@ const ForecastChart: React.FC<ForecastChartProps> = ({
         </ResponsiveContainer>
       </div>
 
-      {/* 選択ポイント詳細パネル — チャート外の固定位置 */}
-      {selectedPoint && (
-        <div className="mt-4 animate-pulse-once rounded-lg border-2 border-purple-500 bg-purple-900/30 p-4 shadow-lg shadow-purple-900/20">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex-1">
-              <p className="text-sm font-bold text-white">
-                📍 選択中: {selectedPoint.store_type} —{' '}
-                {new Date(selectedPoint.date).toLocaleDateString('ja-JP', {
-                  year: 'numeric',
-                  month: 'long',
-                })}
-              </p>
-              <div className="mt-1 flex flex-wrap gap-3 text-sm">
-                <span className="text-orange-400">
-                  実績: {selectedPoint.actual_sales?.toFixed(2)}億円
-                </span>
-                <span className="text-purple-400">
-                  予測: {selectedPoint.predicted_sales?.toFixed(2)}億円
-                </span>
-                <span className={Math.abs(selectedPoint.pct_error || 0) > 5 ? 'font-medium text-red-400' : 'text-gray-400'}>
-                  誤差: {Math.abs(selectedPoint.error || 0).toFixed(2)}億円
-                  ({Math.abs(selectedPoint.pct_error || 0).toFixed(1)}%)
-                </span>
-              </div>
-            </div>
-            <div className="flex gap-2">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setSelectedPoint(null);
-                }}
-                className="rounded-lg border border-gray-600 px-3 py-2.5 text-sm text-gray-300 transition-colors hover:bg-gray-700"
-              >
-                閉じる
-              </button>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleAnalyze();
-                }}
-                className="rounded-lg bg-purple-600 px-5 py-2.5 text-sm font-bold text-white shadow-md transition-all hover:scale-105 hover:bg-purple-500 hover:shadow-lg"
-              >
-                🔍 誤差分析を実行
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* ヒントテキスト */}
       <div className="mt-3 rounded-lg border border-blue-800/30 bg-blue-900/10 p-3">
         <p className="text-sm text-blue-300">
-          💡 チャート上の任意のデータポイントをクリックすると、AI による予測誤差の{' '}
-          <strong>根本原因分析</strong>を実行できます。季節変動、消費者動向、外部経済要因などを
-          考慮した分析結果が表示されます。
+          💡 予測データがある区間のデータポイントをクリックすると、AI による予測誤差の{' '}
+          <strong>根本原因分析</strong>が即座に開始されます。
         </p>
       </div>
     </div>

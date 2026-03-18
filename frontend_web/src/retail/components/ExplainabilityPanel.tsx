@@ -43,18 +43,7 @@ const ExplainabilityPanel: React.FC<ExplainabilityPanelProps> = ({
   }
 
   if (!analysis) {
-    return (
-      <div className="rounded-xl border border-blue-700/30 bg-blue-900/10 p-4">
-        <div className="flex items-start gap-3">
-          <span className="text-xl">💡</span>
-          <p className="text-sm text-blue-300">
-            チャート上の任意のデータポイントをクリックすると、AI による予測誤差の
-            根本原因分析を実行できます。季節変動、消費者動向、外部経済要因などを
-            考慮した分析結果が表示されます。
-          </p>
-        </div>
-      </div>
-    );
+    return null;
   }
 
   const generateMarkdownReport = () => {
