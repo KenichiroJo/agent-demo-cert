@@ -131,6 +131,14 @@ const ForecastChart: React.FC<ForecastChartProps> = ({
     );
   }, [errorStats]);
 
+  // チャートクリックで即座に分析パネルを表示（ワンクリック動作）
+  const handleChartClick = useCallback(
+    (point: ForecastData) => {
+      setSelectedPoint(point);
+    },
+    []
+  );
+
   const handleAnalyze = useCallback(() => {
     if (selectedPoint && onPointClick) {
       onPointClick(selectedPoint);
@@ -143,7 +151,7 @@ const ForecastChart: React.FC<ForecastChartProps> = ({
       const d = payload[0].payload;
       const hasPred = d.predicted_sales != null;
       return (
-        <div className="rounded-lg border border-gray-600 bg-gray-800 p-3 text-sm shadow-lg">
+        <div className="pointer-events-none rounded-lg border border-gray-600 bg-gray-800 p-3 text-sm shadow-lg">
           <p className="mb-2 font-medium text-white">{label}</p>
           <div className="flex flex-col gap-1">
             {d.actual_sales != null && (
@@ -158,8 +166,8 @@ const ForecastChart: React.FC<ForecastChartProps> = ({
               </p>
             )}
             {hasPred && (
-              <p className="mt-1 cursor-pointer text-xs text-blue-400 hover:underline">
-                クリックで誤差分析を実行 →
+              <p className="mt-1 text-xs text-gray-500 italic">
+                ※ クリックで選択 → 下のパネルから分析実行
               </p>
             )}
           </div>
@@ -233,7 +241,7 @@ const ForecastChart: React.FC<ForecastChartProps> = ({
               if (chartState?.activePayload?.length > 0) {
                 const pt = chartState.activePayload[0].payload as ForecastData;
                 if (pt.predicted_sales != null) {
-                  setSelectedPoint(pt);
+                  handleChartClick(pt);
                 }
               }
             }}
@@ -321,35 +329,47 @@ const ForecastChart: React.FC<ForecastChartProps> = ({
         </ResponsiveContainer>
       </div>
 
-      {/* 選択ポイント詳細パネル */}
+      {/* 選択ポイント詳細パネル — チャート外の固定位置 */}
       {selectedPoint && (
-        <div className="mt-4 rounded-lg border border-purple-700/50 bg-purple-900/20 p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-white">
-                選択: {selectedPoint.store_type} —{' '}
+        <div className="mt-4 animate-pulse-once rounded-lg border-2 border-purple-500 bg-purple-900/30 p-4 shadow-lg shadow-purple-900/20">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex-1">
+              <p className="text-sm font-bold text-white">
+                📍 選択中: {selectedPoint.store_type} —{' '}
                 {new Date(selectedPoint.date).toLocaleDateString('ja-JP', {
                   year: 'numeric',
                   month: 'long',
                 })}
               </p>
-              <p className="text-sm text-gray-400">
-                実績: {selectedPoint.actual_sales?.toFixed(2)}億円 / 予測:{' '}
-                {selectedPoint.predicted_sales?.toFixed(2)}億円 / 誤差:{' '}
-                {Math.abs(selectedPoint.error || 0).toFixed(2)}億円 (
-                {Math.abs(selectedPoint.pct_error || 0).toFixed(1)}%)
-              </p>
+              <div className="mt-1 flex flex-wrap gap-3 text-sm">
+                <span className="text-orange-400">
+                  実績: {selectedPoint.actual_sales?.toFixed(2)}億円
+                </span>
+                <span className="text-purple-400">
+                  予測: {selectedPoint.predicted_sales?.toFixed(2)}億円
+                </span>
+                <span className={Math.abs(selectedPoint.pct_error || 0) > 5 ? 'font-medium text-red-400' : 'text-gray-400'}>
+                  誤差: {Math.abs(selectedPoint.error || 0).toFixed(2)}億円
+                  ({Math.abs(selectedPoint.pct_error || 0).toFixed(1)}%)
+                </span>
+              </div>
             </div>
             <div className="flex gap-2">
               <button
-                onClick={() => setSelectedPoint(null)}
-                className="rounded-lg border border-gray-600 px-3 py-2 text-sm text-gray-300 transition-colors hover:bg-gray-700"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSelectedPoint(null);
+                }}
+                className="rounded-lg border border-gray-600 px-3 py-2.5 text-sm text-gray-300 transition-colors hover:bg-gray-700"
               >
                 閉じる
               </button>
               <button
-                onClick={handleAnalyze}
-                className="rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-purple-500"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleAnalyze();
+                }}
+                className="rounded-lg bg-purple-600 px-5 py-2.5 text-sm font-bold text-white shadow-md transition-all hover:scale-105 hover:bg-purple-500 hover:shadow-lg"
               >
                 🔍 誤差分析を実行
               </button>
