@@ -70,34 +70,12 @@ class RetailDataProcessor:
     # DataRobot Prediction API
     # ------------------------------------------------------------------
 
-    def _build_scoring_data(self) -> pd.DataFrame:
-        """学習データから予測用スコアリングデータを構築する。
-        直近12ヶ月の実績 + 未来N ヶ月の空行（target=NaN）。"""
-        forecast_months = int(os.getenv("FORECAST_WINDOW_END", "3"))
-
-        if self.training_data is None or self.training_data.empty:
-            raise RuntimeError("学習データが読み込まれていません")
-
-        max_date = self.training_data["year_month"].max()
-        cutoff = max_date - pd.DateOffset(months=11)
-        recent = self.training_data[self.training_data["year_month"] >= cutoff].copy()
-
-        future_rows = []
-        for store_type in self.training_data["store_type"].unique():
-            for i in range(1, forecast_months + 1):
-                future_date = max_date + pd.DateOffset(months=i)
-                row: dict = {"year_month": future_date, "store_type": store_type}
-                for col in recent.columns:
-                    if col not in ("year_month", "store_type"):
-                        row[col] = np.nan
-                future_rows.append(row)
-
-        scoring_df = pd.concat([recent, pd.DataFrame(future_rows)], ignore_index=True)
-        scoring_df = scoring_df.sort_values(["store_type", "year_month"]).reset_index(drop=True)
-        print(f"スコアリングデータ構築: {len(recent)} 実績行 + {len(future_rows)} 未来行 = {len(scoring_df)} 行")
-        return scoring_df
-
     def _fetch_predictions_from_api(self) -> pd.DataFrame:
+        """ローリング forecastPoint でPrediction APIを呼び出し、全期間の予測を取得する。
+        ERCOT パターン: 表示期間全体に予測線を表示するため、
+        forecastPoint をずらしながら複数回APIを呼ぶ。
+        結果はキャッシュし、次回起動時はキャッシュを優先する。
+        """
         endpoint = os.getenv("DATAROBOT_ENDPOINT", "").rstrip("/")
         token = os.getenv("DATAROBOT_API_TOKEN", "")
         deployment_id = os.getenv("FORECAST_DEPLOYMENT_ID", "")
@@ -110,9 +88,46 @@ class RetailDataProcessor:
             base = base[: -len("/api/v2")]
         predict_url = f"{base}/api/v2/deployments/{deployment_id}/predictions"
 
-        scoring_df = self._build_scoring_data()
-        scoring_csv_bytes = scoring_df.to_csv(index=False).encode("utf-8")
-        print(f"Prediction API に {len(scoring_df)} 行を送信: {predict_url}")
+        # キャッシュ確認: 1日以内のキャッシュがあればそれを使う
+        cache_path = os.path.join(self.base_path, "predictions_dataset.csv")
+        cache_max_age = int(os.getenv("PREDICTION_CACHE_MAX_AGE_HOURS", "24"))
+        if os.path.exists(cache_path):
+            cache_age_hours = (
+                datetime.now().timestamp() - os.path.getmtime(cache_path)
+            ) / 3600
+            if cache_age_hours < cache_max_age:
+                print(f"予測キャッシュ使用 (経過時間: {cache_age_hours:.1f}h < {cache_max_age}h)")
+                return pd.read_csv(cache_path)
+
+        if self.training_data is None or self.training_data.empty:
+            raise RuntimeError("学習データが読み込まれていません")
+
+        forecast_window = int(os.getenv("FORECAST_WINDOW_END", "3"))
+        feature_window = int(os.getenv("FEATURE_DERIVATION_WINDOW", "12"))
+
+        # 全学習データをスコアリングコンテキストとして使用
+        full_data = self.training_data.copy()
+        scoring_csv_bytes = full_data.to_csv(index=False).encode("utf-8")
+
+        # ローリング forecastPoint を生成
+        all_dates = sorted(full_data["year_month"].unique())
+        max_date = all_dates[-1]
+
+        # feature_window 分の履歴を確保してから予測開始
+        if len(all_dates) <= feature_window:
+            start_idx = 0
+        else:
+            start_idx = feature_window
+
+        forecast_points = all_dates[start_idx::forecast_window]
+        # 最終日も必ず含める（未来予測のため）
+        if max_date not in forecast_points:
+            forecast_points = list(forecast_points) + [max_date]
+
+        print(
+            f"ローリング予測: {len(forecast_points)} 回のAPI呼び出し "
+            f"(feature_window={feature_window}, forecast_window={forecast_window})"
+        )
 
         headers = {
             "Authorization": f"Token {token}",
@@ -120,25 +135,53 @@ class RetailDataProcessor:
             "Accept": "text/csv",
         }
 
+        all_predictions: list[pd.DataFrame] = []
         with httpx.Client(follow_redirects=True, timeout=180.0) as client:
-            resp = client.post(predict_url, content=scoring_csv_bytes, headers=headers)
-            if resp.status_code != 200:
-                print(f"Prediction API エラー ({resp.status_code}): {resp.text[:1000]}")
-            resp.raise_for_status()
-            pred_df = pd.read_csv(io.BytesIO(resp.content))
+            for fp in forecast_points:
+                fp_str = pd.Timestamp(fp).strftime("%Y-%m-%dT00:00:00.000Z")
+                try:
+                    resp = client.post(
+                        predict_url,
+                        content=scoring_csv_bytes,
+                        headers=headers,
+                        params={"forecastPoint": fp_str},
+                    )
+                    if resp.status_code == 200:
+                        pred_df = pd.read_csv(io.BytesIO(resp.content))
+                        all_predictions.append(pred_df)
+                        print(f"  forecastPoint={fp_str[:7]}: {len(pred_df)} 行")
+                    else:
+                        print(f"  forecastPoint={fp_str[:7]}: エラー {resp.status_code}")
+                except Exception as e:
+                    print(f"  forecastPoint={fp_str[:7]}: 例外 {e}")
 
-        print(f"Prediction API 成功: {len(pred_df)} 行, カラム: {list(pred_df.columns)}")
+        if not all_predictions:
+            raise RuntimeError("全ての予測APIコールが失敗しました")
+
+        result = pd.concat(all_predictions, ignore_index=True)
+        print(
+            f"Prediction API 成功 (全体): {len(result)} 行, "
+            f"カラム: {list(result.columns)}"
+        )
+
+        # FORECAST_DISTANCE で重複排除 (最短距離=最も信頼性の高い予測を採用)
+        if "FORECAST_DISTANCE" in result.columns:
+            before = len(result)
+            result = result.sort_values("FORECAST_DISTANCE")
+            result = result.drop_duplicates(
+                subset=["store_type", "year_month"], keep="first"
+            )
+            print(f"重複排除: {before} -> {len(result)} レコード")
 
         # キャッシュ保存
-        cache_path = os.path.join(self.base_path, "predictions_dataset.csv")
         try:
             os.makedirs(os.path.dirname(cache_path), exist_ok=True)
-            pred_df.to_csv(cache_path, index=False)
+            result.to_csv(cache_path, index=False)
             print(f"予測キャッシュ保存: {cache_path}")
         except Exception:
             pass
 
-        return pred_df
+        return result
 
     def _download_ai_catalog_csv(self, dataset_id: str) -> pd.DataFrame:
         endpoint = os.getenv("DATAROBOT_ENDPOINT", "").rstrip("/")
