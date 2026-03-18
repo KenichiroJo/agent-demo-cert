@@ -3,6 +3,11 @@
  * - 信頼区間バンド (グレー背景)
  * - 誤差比例ドットサイズ (大きい誤差 = 大きいドット + 色変化)
  * - ワンクリックで即座に誤差分析起動
+ *
+ * クリック方式: ツールチップ描画時に hoveredPoint ref を更新し、
+ * チャート wrapper div の onClick でその ref を使って分析を発動。
+ * Recharts の onClick / activeDot.onClick はバージョンによって
+ * ペイロードが取れないため使用しない。
  */
 
 import React, { useMemo, useCallback, useRef } from 'react';
@@ -42,6 +47,8 @@ const ForecastChart: React.FC<ForecastChartProps> = ({
   error = null,
   onPointClick,
 }) => {
+  // ツールチップが表示中のデータポイントを追跡
+  const hoveredPointRef = useRef<ForecastData | null>(null);
   const analysisTriggeredRef = useRef(false);
 
   // 誤差の統計を計算 (ドットサイズスケーリング用)
@@ -89,33 +96,32 @@ const ForecastChart: React.FC<ForecastChartProps> = ({
     };
   }, [data]);
 
-  // ワンクリック: チャートクリック → 即座に onPointClick を呼び出して分析開始
-  const triggerAnalysis = useCallback(
-    (point: ForecastData) => {
-      console.log('[ForecastChart] triggerAnalysis called:', {
-        store_type: point.store_type,
-        date: point.date,
-        predicted_sales: point.predicted_sales,
-        hasOnPointClick: !!onPointClick,
-      });
+  // チャート領域クリック → hoveredPointRef の値で分析起動
+  const handleChartAreaClick = useCallback(() => {
+    const point = hoveredPointRef.current;
+    if (!point) {
+      console.log('[ForecastChart] Click: no hovered point');
+      return;
+    }
+    console.log('[ForecastChart] Click on point:', point.store_type, point.date, 'predicted=', point.predicted_sales);
 
-      if (onPointClick && point.predicted_sales != null) {
-        // 重複トリガー防止
-        if (analysisTriggeredRef.current) {
-          console.log('[ForecastChart] Analysis already triggered, skipping');
-          return;
-        }
-        analysisTriggeredRef.current = true;
-        setTimeout(() => { analysisTriggeredRef.current = false; }, 2000);
+    if (!onPointClick) {
+      console.log('[ForecastChart] No onPointClick callback');
+      return;
+    }
+    if (point.predicted_sales == null) {
+      console.log('[ForecastChart] No prediction for this point');
+      return;
+    }
 
-        console.log('[ForecastChart] Calling onPointClick...');
-        onPointClick(point);
-      } else {
-        console.log('[ForecastChart] Skipped: onPointClick=', !!onPointClick, 'predicted_sales=', point.predicted_sales);
-      }
-    },
-    [onPointClick]
-  );
+    // 重複トリガー防止
+    if (analysisTriggeredRef.current) return;
+    analysisTriggeredRef.current = true;
+    setTimeout(() => { analysisTriggeredRef.current = false; }, 3000);
+
+    console.log('[ForecastChart] Triggering analysis...');
+    onPointClick(point);
+  }, [onPointClick]);
 
   // ERCOTスタイル: 誤差の大きさに応じたドットサイズ・色を返すカスタムドット
   const CustomActualDot = useCallback(
@@ -126,21 +132,19 @@ const ForecastChart: React.FC<ForecastChartProps> = ({
       const absPct = Math.abs(payload?.pct_error || 0);
       const hasPrediction = payload?.predicted_sales != null;
 
-      // 予測がない期間はデフォルト小ドット
       if (!hasPrediction) {
         return <circle cx={cx} cy={cy} r={3} fill={CHART_COLORS.actual} stroke="none" />;
       }
 
-      // 誤差レベルに応じたサイズ・色
       let radius = 3;
       let color = CHART_COLORS.actual;
 
       if (absPct > errorStats.p75) {
         radius = 7;
-        color = CHART_COLORS.errorHigh; // 赤
+        color = CHART_COLORS.errorHigh;
       } else if (absPct > errorStats.p50) {
         radius = 5;
-        color = CHART_COLORS.errorMed; // 黄
+        color = CHART_COLORS.errorMed;
       }
 
       return (
@@ -158,22 +162,13 @@ const ForecastChart: React.FC<ForecastChartProps> = ({
     [errorStats]
   );
 
-  // activeDot クリックハンドラ (Recharts が activeDot の onClick に渡す引数)
-  const handleActiveDotClick = useCallback(
-    (dotData: any, _index: number, e: React.MouseEvent) => {
-      e?.stopPropagation?.();
-      const point = dotData?.payload || dotData;
-      console.log('[ForecastChart] activeDot clicked:', point?.date, point?.store_type);
-      if (point) {
-        triggerAnalysis(point as ForecastData);
-      }
-    },
-    [triggerAnalysis]
-  );
-
-  const CustomTooltip = ({ active, payload, label }: any) => {
+  // ツールチップ: 描画されるたびに hoveredPointRef を更新
+  const CustomTooltip = useCallback(({ active, payload, label }: any) => {
     if (active && payload?.length) {
       const d = payload[0].payload;
+      // ★ ツールチップ表示中のポイントを ref に保存
+      hoveredPointRef.current = d as ForecastData;
+
       const hasPred = d.predicted_sales != null;
       return (
         <div className="pointer-events-none rounded-lg border border-gray-600 bg-gray-800 p-3 text-sm shadow-lg">
@@ -198,9 +193,11 @@ const ForecastChart: React.FC<ForecastChartProps> = ({
           </div>
         </div>
       );
+    } else {
+      hoveredPointRef.current = null;
     }
     return null;
-  };
+  }, []);
 
   if (loading) {
     return (
@@ -257,19 +254,15 @@ const ForecastChart: React.FC<ForecastChartProps> = ({
         )}
       </div>
 
-      <div>
+      {/* ★ チャート wrapper div の onClick でクリック検出 */}
+      <div
+        onClick={handleChartAreaClick}
+        style={{ cursor: 'crosshair' }}
+      >
         <ResponsiveContainer width="100%" height={420}>
           <ComposedChart
             data={chartData}
             margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
-            onClick={(chartState: any) => {
-              console.log('[ForecastChart] ComposedChart onClick fired', chartState?.activePayload?.length);
-              if (chartState?.activePayload?.length > 0) {
-                const pt = chartState.activePayload[0].payload as ForecastData;
-                triggerAnalysis(pt);
-              }
-            }}
-            style={{ cursor: 'crosshair' }}
           >
             <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
             <XAxis
@@ -327,14 +320,7 @@ const ForecastChart: React.FC<ForecastChartProps> = ({
               name="予測売上"
               strokeDasharray="5 5"
               dot={{ r: 2, fill: CHART_COLORS.predicted }}
-              activeDot={{
-                r: 5,
-                fill: CHART_COLORS.predicted,
-                stroke: '#fff',
-                strokeWidth: 2,
-                cursor: 'pointer',
-                onClick: handleActiveDotClick,
-              }}
+              activeDot={{ r: 5, fill: CHART_COLORS.predicted, stroke: '#fff', strokeWidth: 2 }}
               isAnimationActive={false}
               connectNulls={false}
             />
@@ -347,14 +333,7 @@ const ForecastChart: React.FC<ForecastChartProps> = ({
               strokeWidth={2}
               name="実績売上"
               dot={<CustomActualDot />}
-              activeDot={{
-                r: 8,
-                fill: CHART_COLORS.actual,
-                stroke: '#fff',
-                strokeWidth: 2,
-                cursor: 'pointer',
-                onClick: handleActiveDotClick,
-              }}
+              activeDot={{ r: 8, fill: CHART_COLORS.actual, stroke: '#fff', strokeWidth: 2 }}
               isAnimationActive={false}
             />
           </ComposedChart>
