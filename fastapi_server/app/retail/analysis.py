@@ -135,7 +135,9 @@ async def analyze_retail_forecast_error(
     print(f"[LLM Gateway] model={model}, base_url={_llm_base_url(endpoint)}")
 
     summary_text = ""
+    llm_error_detail = ""
     try:
+        print(f"[LLM Gateway] Sending request... endpoint={endpoint}, api_key={'SET' if api_key else 'EMPTY'}")
         completion = await client.chat.completions.create(
             model=model,
             messages=[
@@ -155,17 +157,26 @@ async def analyze_retail_forecast_error(
         summary_text = completion.choices[0].message.content or ""
         print(f"[LLM Gateway] Response: {len(summary_text)} chars")
     except Exception as e:
-        print(f"[LLM Gateway] Error: {e}")
+        llm_error_detail = f"{type(e).__name__}: {e}"
+        print(f"[LLM Gateway] Error: {llm_error_detail}")
         import traceback
         traceback.print_exc()
 
-    # フォールバック: LLM が空を返した場合
+    # フォールバック: LLM が空を返した場合 → エラー詳細を表示
     if not summary_text:
+        error_info = llm_error_detail or "空レスポンス"
         summary_text = (
             f"## 誤差の概要\n\n"
             f"**{store_type}** の {date_str} における予測誤差は "
             f"**{abs(float(error_val or 0)):.3f}億円** でした。\n\n"
-            f"⚠️ AI分析が利用できませんでした (LLM Gateway 接続エラーまたは空レスポンス)。\n\n"
+            f"## ⚠️ LLM Gateway エラー\n\n"
+            f"```\n"
+            f"URL: {_llm_base_url(endpoint)}/chat/completions\n"
+            f"Model: {model}\n"
+            f"Error: {error_info}\n"
+            f"DATAROBOT_ENDPOINT: {endpoint}\n"
+            f"DATAROBOT_API_TOKEN: {'設定済み' if api_key else '未設定'}\n"
+            f"```\n\n"
             f"## 統計コンテキスト\n\n"
             f"- 業態 RMSE: {error_context.get('store_type_rmse', 'N/A')}億円\n"
             f"- 業態 MAE: {error_context.get('store_type_mae', 'N/A')}億円\n"
