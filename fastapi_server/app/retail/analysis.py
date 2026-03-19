@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 from typing import Any
 
+import httpx
 import yaml  # type: ignore
 from openai import AsyncOpenAI
 
@@ -21,6 +22,76 @@ def _llm_base_url(endpoint: str) -> str:
     if base.endswith("/api/v2"):
         base = base[: -len("/api/v2")]
     return f"{base}/api/v2/genai/llmgw"
+
+
+# カタログから取得したモデルをキャッシュ
+_cached_model: str | None = None
+
+
+async def _get_available_model(endpoint: str, token: str) -> str:
+    """LLM Gateway カタログから利用可能なモデルを自動検出"""
+    global _cached_model
+    if _cached_model:
+        return _cached_model
+
+    # 環境変数で明示指定されている場合はそれを使う
+    env_model = os.getenv("LLM_DEFAULT_MODEL")
+    if env_model:
+        _cached_model = env_model
+        return env_model
+
+    # カタログ API を呼んで利用可能モデルを取得
+    base = endpoint.rstrip("/")
+    catalog_url = f"{base}/genai/llmgw/catalog/"
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # 優先順位: 日本語対応が良いモデルを優先
+    preferred = [
+        "azure/gpt-4.1-mini",
+        "azure/gpt-4o-mini",
+        "azure/gpt-4.1",
+        "azure/gpt-4o",
+        "azure/gpt-4-turbo",
+        "google/gemini-2.0-flash",
+        "google/gemini-1.5-flash",
+        "anthropic/claude-sonnet-4",
+        "anthropic/claude-3.5-sonnet",
+    ]
+
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get(catalog_url, headers=headers)
+            resp.raise_for_status()
+            data = resp.json().get("data", [])
+
+        available = [
+            m["model"] for m in data
+            if m.get("status") == "active"
+        ]
+        print(f"[LLM Gateway] カタログ: {len(available)} モデル利用可能")
+        print(f"[LLM Gateway] 例: {available[:10]}")
+
+        # 優先リストから最初にマッチするものを選択
+        for pref in preferred:
+            for avail in available:
+                if pref in avail:
+                    _cached_model = avail
+                    print(f"[LLM Gateway] 選択モデル: {_cached_model}")
+                    return _cached_model
+
+        # 優先リストにマッチしない場合は最初の利用可能モデル
+        if available:
+            _cached_model = available[0]
+            print(f"[LLM Gateway] フォールバックモデル: {_cached_model}")
+            return _cached_model
+
+    except Exception as e:
+        print(f"[LLM Gateway] カタログ取得エラー: {e}")
+
+    # 最終フォールバック
+    fallback = "azure/gpt-4o-mini"
+    print(f"[LLM Gateway] 最終フォールバック: {fallback}")
+    return fallback
 
 
 _AGENTS_YAML_CACHE: dict[str, Any] | None = None
@@ -129,7 +200,7 @@ async def analyze_retail_forecast_error(
         base_url=_llm_base_url(endpoint),
         timeout=90.0,
     )
-    model = os.getenv("LLM_DEFAULT_MODEL") or "datarobot/azure/gpt-5-mini-2025-08-07"
+    model = await _get_available_model(endpoint, api_key)
     max_tokens = int(os.getenv("RETAIL_ANALYSIS_MAX_TOKENS") or "2000")
 
     print(f"[LLM Gateway] model={model}, base_url={_llm_base_url(endpoint)}")
