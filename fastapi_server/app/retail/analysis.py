@@ -129,7 +129,7 @@ async def analyze_retail_forecast_error(
         base_url=_llm_base_url(endpoint),
         timeout=90.0,
     )
-    model = os.getenv("LLM_DEFAULT_MODEL") or os.getenv("ERCOT_ANALYSIS_MODEL") or "azure/gpt-4.1-mini-2025-04-14"
+    model = os.getenv("LLM_DEFAULT_MODEL") or "datarobot/azure/gpt-5-mini-2025-08-07"
     max_tokens = int(os.getenv("RETAIL_ANALYSIS_MAX_TOKENS") or "2000")
 
     print(f"[LLM Gateway] model={model}, base_url={_llm_base_url(endpoint)}")
