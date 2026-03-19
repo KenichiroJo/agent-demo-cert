@@ -16,6 +16,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from app.retail.analysis import analyze_retail_forecast_error
+from app.retail.chat import stream_chat_with_retail_assistant
 from app.retail.data_processor import RetailDataProcessor
 from app.retail.error_analyzer import RetailErrorAnalyzer
 from app.retail.utils import clean_nan_values
@@ -57,6 +58,15 @@ def _ea() -> RetailErrorAnalyzer:
 class ErrorAnalysisRequest(BaseModel):
     store_type: str
     date: str
+
+
+class ChatMessage(BaseModel):
+    role: str  # "user" or "assistant"
+    content: str
+
+
+class ChatRequest(BaseModel):
+    messages: list[ChatMessage]
 
 
 def _sse(event: str, data: Any) -> str:
@@ -234,6 +244,30 @@ async def _analyze_error_stream(request: ErrorAnalysisRequest):
 async def analyze_error(request: ErrorAnalysisRequest):
     return StreamingResponse(
         _analyze_error_stream(request),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
+    )
+
+
+# ---------------------------------------------------------------------------
+# AI チャットエンドポイント (SSE ストリーミング)
+# ---------------------------------------------------------------------------
+
+@retail_router.post("/chat")
+async def retail_chat(request: ChatRequest):
+    """
+    対話形式で売上データを分析するチャットエンドポイント
+    SSE ストリーミングで LLM レスポンスをリアルタイム返却
+    """
+    try:
+        _ensure_initialized()
+    except Exception:
+        raise HTTPException(status_code=503, detail=f"Not initialized: {_init_error}")
+
+    messages = [{"role": m.role, "content": m.content} for m in request.messages]
+
+    return StreamingResponse(
+        stream_chat_with_retail_assistant(messages=messages, dp=_dp()),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
     )
