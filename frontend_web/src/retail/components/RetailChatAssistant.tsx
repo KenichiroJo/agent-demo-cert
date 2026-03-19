@@ -206,115 +206,182 @@ const RetailChatAssistant: React.FC = () => {
   };
 
   return (
-    <div className="flex h-full flex-col bg-gray-900">
-      {/* Header */}
-      <div className="flex items-center justify-between border-b border-gray-700 bg-gray-800/80 px-4 py-3">
-        <div className="flex items-center gap-2">
-          <span className="text-xl">🤖</span>
-          <h2 className="text-sm font-semibold text-white">小売 AI アナリスト</h2>
-          <span className="rounded-full bg-green-900/50 px-2 py-0.5 text-xs text-green-400">
-            オンライン
-          </span>
-        </div>
-        <button
-          onClick={handleClearChat}
-          className="rounded-lg px-3 py-1.5 text-xs text-gray-400 transition-colors hover:bg-gray-700 hover:text-white"
-        >
-          クリア
-        </button>
-      </div>
-
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-4 py-4">
-        <div className="mx-auto max-w-3xl space-y-4">
-          {messages.map((msg) => (
-            <div
-              key={msg.id}
-              className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-            >
-              <div
-                className={`max-w-[85%] rounded-2xl px-4 py-3 ${
-                  msg.role === 'user'
-                    ? 'bg-purple-600 text-white'
-                    : 'border border-gray-700 bg-gray-800 text-gray-200'
-                }`}
-              >
-                {msg.role === 'assistant' ? (
-                  <div className="prose prose-invert prose-sm max-w-none">
-                    <MarkdownContent content={msg.content} />
-                    {msg.isStreaming && (
-                      <span className="ml-1 inline-block h-3 w-3 animate-pulse rounded-full bg-purple-400" />
-                    )}
-                  </div>
-                ) : (
-                  <p className="whitespace-pre-wrap text-sm">{msg.content}</p>
-                )}
-                <p className="mt-1 text-right text-[10px] opacity-50">
-                  {msg.timestamp.toLocaleTimeString('ja-JP', {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}
-                </p>
-              </div>
+    <div className="flex h-full w-full bg-gray-900">
+      {/* Left sidebar: info + suggestions */}
+      <div className="hidden w-72 flex-shrink-0 flex-col border-r border-gray-700 bg-gray-800/60 lg:flex">
+        {/* Sidebar header */}
+        <div className="border-b border-gray-700 px-4 py-4">
+          <div className="flex items-center gap-2">
+            <span className="text-2xl">🤖</span>
+            <div>
+              <h2 className="text-sm font-bold text-white">小売 AI アナリスト</h2>
+              <p className="text-[11px] text-gray-500">DataRobot LLM Gateway</p>
             </div>
-          ))}
-          <div ref={messagesEndRef} />
+          </div>
+          <div className="mt-3 flex items-center gap-2">
+            <span className="h-2 w-2 rounded-full bg-green-500" />
+            <span className="text-xs text-green-400">オンライン</span>
+          </div>
         </div>
-      </div>
 
-      {/* Suggested questions (show when few messages) */}
-      {messages.length <= 2 && !isLoading && (
-        <div className="border-t border-gray-800 bg-gray-900/50 px-4 py-3">
-          <p className="mb-2 text-xs text-gray-500">質問の例:</p>
-          <div className="mx-auto flex max-w-3xl flex-wrap gap-2">
+        {/* Capabilities */}
+        <div className="flex-1 overflow-y-auto px-4 py-4">
+          <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-gray-500">分析可能な項目</p>
+          <div className="space-y-2">
+            {[
+              { icon: '📊', label: '売上トレンド分析' },
+              { icon: '🎯', label: '予測精度の評価' },
+              { icon: '🔍', label: '誤差の根本原因' },
+              { icon: '📅', label: '季節変動パターン' },
+              { icon: '🏪', label: '業態間の比較' },
+              { icon: '💡', label: '改善アクション提案' },
+            ].map(({ icon, label }) => (
+              <div key={label} className="flex items-center gap-2 rounded-lg bg-gray-800/50 px-3 py-2">
+                <span className="text-sm">{icon}</span>
+                <span className="text-xs text-gray-300">{label}</span>
+              </div>
+            ))}
+          </div>
+
+          <p className="mb-3 mt-6 text-xs font-semibold uppercase tracking-wider text-gray-500">対象業態</p>
+          <div className="flex flex-wrap gap-1.5">
+            {['百貨店', 'スーパー', 'コンビニ', 'ドラッグストア', 'EC'].map((st) => (
+              <span key={st} className="rounded-full border border-purple-800/50 bg-purple-900/20 px-2.5 py-1 text-[11px] text-purple-300">
+                {st}
+              </span>
+            ))}
+          </div>
+
+          {/* Quick questions */}
+          <p className="mb-3 mt-6 text-xs font-semibold uppercase tracking-wider text-gray-500">クイック質問</p>
+          <div className="space-y-1.5">
             {SUGGESTED_QUESTIONS.map((q, i) => (
               <button
                 key={i}
                 onClick={() => handleSuggestionClick(q)}
-                className="rounded-full border border-gray-700 bg-gray-800 px-3 py-1.5 text-xs text-gray-300 transition-colors hover:border-purple-500 hover:text-purple-300"
+                disabled={isLoading}
+                className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-left text-xs text-gray-300 transition-colors hover:border-purple-500 hover:text-purple-300 disabled:opacity-50"
               >
                 {q}
               </button>
             ))}
           </div>
         </div>
-      )}
 
-      {/* Input area */}
-      <div className="border-t border-gray-700 bg-gray-800/80 px-4 py-3">
-        <form onSubmit={handleSubmit} className="mx-auto flex max-w-3xl items-end gap-2">
-          <textarea
-            ref={inputRef}
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="売上データについて質問してください..."
-            rows={1}
-            className="flex-1 resize-none rounded-xl border border-gray-600 bg-gray-700 px-4 py-2.5 text-sm text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
-            style={{ maxHeight: '120px' }}
-            disabled={isLoading}
-          />
-          {isLoading ? (
-            <button
-              type="button"
-              onClick={handleStop}
-              className="rounded-xl bg-red-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-red-500"
-            >
-              停止
-            </button>
-          ) : (
-            <button
-              type="submit"
-              disabled={!inputValue.trim()}
-              className="rounded-xl bg-purple-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-purple-500 disabled:opacity-40"
-            >
-              送信
-            </button>
-          )}
-        </form>
-        <p className="mx-auto mt-1.5 max-w-3xl text-center text-[10px] text-gray-600">
-          DataRobot LLM Gateway + AutoTS による分析。データは5業態の売上実績・予測を含みます。
-        </p>
+        {/* Sidebar footer */}
+        <div className="border-t border-gray-700 px-4 py-3">
+          <button
+            onClick={handleClearChat}
+            className="w-full rounded-lg border border-gray-600 bg-gray-700 px-3 py-2 text-xs text-gray-300 transition-colors hover:bg-gray-600 hover:text-white"
+          >
+            会話をクリア
+          </button>
+        </div>
+      </div>
+
+      {/* Main chat area */}
+      <div className="flex flex-1 flex-col">
+        {/* Mobile header (visible on small screens) */}
+        <div className="flex items-center justify-between border-b border-gray-700 bg-gray-800/80 px-4 py-2.5 lg:hidden">
+          <div className="flex items-center gap-2">
+            <span>🤖</span>
+            <span className="text-sm font-semibold text-white">小売 AI アナリスト</span>
+            <span className="h-2 w-2 rounded-full bg-green-500" />
+          </div>
+          <button onClick={handleClearChat} className="text-xs text-gray-400 hover:text-white">クリア</button>
+        </div>
+
+        {/* Messages */}
+        <div className="flex-1 overflow-y-auto px-6 py-6">
+          <div className="space-y-5">
+            {messages.map((msg) => (
+              <div key={msg.id} className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
+                {/* Avatar */}
+                <div className={`flex-shrink-0 ${msg.role === 'user' ? 'ml-2' : 'mr-2'}`}>
+                  <div className={`flex h-8 w-8 items-center justify-center rounded-full text-sm ${
+                    msg.role === 'user' ? 'bg-purple-600' : 'bg-gray-700'
+                  }`}>
+                    {msg.role === 'user' ? '👤' : '🤖'}
+                  </div>
+                </div>
+                {/* Message bubble */}
+                <div className={`min-w-0 flex-1 ${msg.role === 'user' ? 'max-w-[70%] ml-auto' : ''}`}>
+                  <div className={`rounded-2xl px-5 py-3.5 ${
+                    msg.role === 'user'
+                      ? 'bg-purple-600 text-white'
+                      : 'border border-gray-700 bg-gray-800/80 text-gray-200'
+                  }`}>
+                    {msg.role === 'assistant' ? (
+                      <div className="prose prose-invert prose-sm max-w-none">
+                        <MarkdownContent content={msg.content} />
+                        {msg.isStreaming && (
+                          <span className="ml-1 inline-block h-3 w-3 animate-pulse rounded-full bg-purple-400" />
+                        )}
+                      </div>
+                    ) : (
+                      <p className="whitespace-pre-wrap text-sm">{msg.content}</p>
+                    )}
+                  </div>
+                  <p className={`mt-1 text-[10px] text-gray-600 ${msg.role === 'user' ? 'text-right' : 'text-left'}`}>
+                    {msg.timestamp.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}
+                  </p>
+                </div>
+              </div>
+            ))}
+            <div ref={messagesEndRef} />
+          </div>
+        </div>
+
+        {/* Suggested questions (inline, show when few messages on mobile) */}
+        {messages.length <= 2 && !isLoading && (
+          <div className="border-t border-gray-800 bg-gray-900/50 px-6 py-3 lg:hidden">
+            <div className="flex flex-wrap gap-2">
+              {SUGGESTED_QUESTIONS.slice(0, 4).map((q, i) => (
+                <button
+                  key={i}
+                  onClick={() => handleSuggestionClick(q)}
+                  className="rounded-full border border-gray-700 bg-gray-800 px-3 py-1.5 text-xs text-gray-300 hover:border-purple-500 hover:text-purple-300"
+                >
+                  {q}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Input area */}
+        <div className="border-t border-gray-700 bg-gray-800/80 px-6 py-4">
+          <form onSubmit={handleSubmit} className="flex items-end gap-3">
+            <textarea
+              ref={inputRef}
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="売上データについて質問してください... (Shift+Enter で改行)"
+              rows={1}
+              className="flex-1 resize-none rounded-xl border border-gray-600 bg-gray-700 px-4 py-3 text-sm text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
+              style={{ maxHeight: '120px' }}
+              disabled={isLoading}
+            />
+            {isLoading ? (
+              <button
+                type="button"
+                onClick={handleStop}
+                className="rounded-xl bg-red-600 px-5 py-3 text-sm font-medium text-white transition-colors hover:bg-red-500"
+              >
+                停止
+              </button>
+            ) : (
+              <button
+                type="submit"
+                disabled={!inputValue.trim()}
+                className="rounded-xl bg-purple-600 px-5 py-3 text-sm font-medium text-white transition-colors hover:bg-purple-500 disabled:opacity-40"
+              >
+                送信
+              </button>
+            )}
+          </form>
+        </div>
       </div>
     </div>
   );
