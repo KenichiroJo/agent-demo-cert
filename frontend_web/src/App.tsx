@@ -40,11 +40,13 @@ export function App() {
         </header>
 
         {/* Main content area */}
-        <div className="flex flex-1 overflow-hidden">
+        <div className="flex flex-1 overflow-hidden w-full">
           {activeTab === 'dashboard' ? (
             <RetailDashboardTab />
           ) : (
-            <RetailChatAssistant />
+            <div className="w-full h-full">
+              <RetailChatAssistant />
+            </div>
           )}
         </div>
       </div>
