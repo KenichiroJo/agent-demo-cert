@@ -45,17 +45,17 @@ async def _get_available_model(endpoint: str, token: str) -> str:
     catalog_url = f"{base}/genai/llmgw/catalog/"
     headers = {"Authorization": f"Bearer {token}"}
 
-    # 優先順位: 日本語対応が良いモデルを優先
+    # 優先順位: コスト効率・日本語対応・速度のバランス
     preferred = [
-        "azure/gpt-4.1-mini",
         "azure/gpt-4o-mini",
-        "azure/gpt-4.1",
+        "azure/gpt-5-mini",
+        "azure/gpt-5-nano",
         "azure/gpt-4o",
-        "azure/gpt-4-turbo",
-        "google/gemini-2.0-flash",
-        "google/gemini-1.5-flash",
-        "anthropic/claude-sonnet-4",
-        "anthropic/claude-3.5-sonnet",
+        "azure/gpt-5",
+        "anthropic/claude-sonnet-4-20250514",
+        "anthropic/claude-3-haiku",
+        "bedrock/anthropic.claude-sonnet-4",
+        "bedrock/anthropic.claude-3-5-haiku",
     ]
 
     try:
