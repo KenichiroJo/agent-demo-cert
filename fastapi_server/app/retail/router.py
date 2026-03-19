@@ -67,6 +67,7 @@ class ChatMessage(BaseModel):
 
 class ChatRequest(BaseModel):
     messages: list[ChatMessage]
+    store_type: str | None = None
 
 
 def _sse(event: str, data: Any) -> str:
@@ -267,7 +268,7 @@ async def retail_chat(request: ChatRequest):
     messages = [{"role": m.role, "content": m.content} for m in request.messages]
 
     return StreamingResponse(
-        stream_chat_with_retail_assistant(messages=messages, dp=_dp()),
+        stream_chat_with_retail_assistant(messages=messages, dp=_dp(), store_type=request.store_type),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
     )
