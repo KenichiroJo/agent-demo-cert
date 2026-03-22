@@ -27,7 +27,7 @@ const QUICK_QUESTIONS = [
   '売上サマリを表にまとめて',
 ];
 
-const STORE_TYPES = ['百貨店', 'スーパー', 'コンビニ', 'ドラッグストア', 'EC'] as const;
+const STORE_TYPES = ['EC1', 'EC2', 'EC3', 'EC4', 'EC5'] as const;
 
 const RetailChatAssistant: React.FC = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([
@@ -35,9 +35,9 @@ const RetailChatAssistant: React.FC = () => {
       id: 'welcome',
       role: 'assistant',
       content:
-        'こんにちは！小売・EC売上予測の **AIアナリスト** です。\n\n' +
-        '左のサイドバーで **業態を選択** し、クイック質問をクリックすると分析を開始できます。\n\n' +
-        '自由に質問を入力することもできます。',
+        'こんにちは！EC売上予測の **AIアナリスト** です。\n\n' +
+        '5業態（EC1〜EC5）の売上データと、DataRobot AutoTS モデルの予測結果にアクセスできます。\n\n' +
+        '左のサイドバーで **業態を選択** し、クイック質問をクリックすると分析を開始できます。',
       timestamp: new Date(),
     },
   ]);

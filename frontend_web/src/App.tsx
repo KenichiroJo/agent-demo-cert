@@ -39,15 +39,14 @@ export function App() {
           </nav>
         </header>
 
-        {/* Main content area */}
+        {/* Main content area — both tabs always mounted, hidden via display:none */}
         <div className="flex flex-1 overflow-hidden w-full">
-          {activeTab === 'dashboard' ? (
+          <div className="w-full h-full" style={{ display: activeTab === 'dashboard' ? 'contents' : 'none' }}>
             <RetailDashboardTab />
-          ) : (
-            <div className="w-full h-full">
-              <RetailChatAssistant />
-            </div>
-          )}
+          </div>
+          <div className="w-full h-full" style={{ display: activeTab === 'chat' ? 'contents' : 'none' }}>
+            <RetailChatAssistant />
+          </div>
         </div>
       </div>
     </SidebarProvider>

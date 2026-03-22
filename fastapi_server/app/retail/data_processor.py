@@ -354,6 +354,18 @@ class RetailDataProcessor:
             self.merged_data["month"] = self.merged_data["year_month"].dt.month
             self.merged_data["year"] = self.merged_data["year_month"].dt.year
 
+            # 業態名リネーム (デモ用: 全業態をEC系に統一)
+            _STORE_TYPE_MAP = {
+                "EC": "EC1",
+                "百貨店": "EC2",
+                "スーパー": "EC3",
+                "コンビニ": "EC4",
+                "ドラッグストア": "EC5",
+            }
+            self.merged_data["store_type"] = self.merged_data["store_type"].map(
+                lambda x: _STORE_TYPE_MAP.get(x, x)
+            )
+
         except Exception as e:
             print(f"データマージエラー: {str(e)}")
             raise

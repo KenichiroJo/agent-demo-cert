@@ -1,15 +1,16 @@
 /**
  * メインダッシュボードコンポーネント
- * 業態セレクター、日付フィルター、KPIバッジ、チャート、分析パネルを統合
+ * 業態セレクター、日付フィルター、KPIバッジ、チャート、分析パネル、PDF出力
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import ForecastChart from './ForecastChart';
 import ExplainabilityPanel from './ExplainabilityPanel';
 import retailApiService, {
   type ForecastData,
   type ErrorAnalysisResponse,
 } from '../services/api';
+import { exportDashboardPdf } from '../utils/exportPdf';
 
 const ForecastDashboard: React.FC = () => {
   const [selectedStoreType, setSelectedStoreType] = useState<string>('');
@@ -23,6 +24,11 @@ const ForecastDashboard: React.FC = () => {
   const [loading, setLoading] = useState({ data: false, analysis: false, init: true });
   const [error, setError] = useState<string | null>(null);
   const [analysisProgress, setAnalysisProgress] = useState<string>('');
+  const [exporting, setExporting] = useState(false);
+
+  // Refs for PDF export
+  const chartRef = useRef<HTMLDivElement>(null);
+  const analysisRef = useRef<HTMLDivElement>(null);
 
   // Initialize
   useEffect(() => {
@@ -64,10 +70,9 @@ const ForecastDashboard: React.FC = () => {
     init();
   }, []);
 
-  // Fetch data when filters change (debounced to avoid rapid fire from date input)
+  // Fetch data when filters change (debounced)
   useEffect(() => {
     if (!selectedStoreType || !startDate || !endDate) return;
-    // Validate date format (YYYY-MM-DD, 10 chars) to avoid firing on partial input
     if (startDate.length < 10 || endDate.length < 10) return;
     const timer = setTimeout(() => {
       fetchData();
@@ -125,6 +130,22 @@ const ForecastDashboard: React.FC = () => {
       setLoading((prev) => ({ ...prev, analysis: false }));
     }
   }, []);
+
+  const handleExportPdf = useCallback(async () => {
+    setExporting(true);
+    try {
+      await exportDashboardPdf(chartRef.current, analysisRef.current, {
+        storeType: selectedStoreType,
+        startDate,
+        endDate,
+      });
+    } catch (err: any) {
+      console.error('[PDF] Export error:', err);
+      setError('PDF出力に失敗しました: ' + err?.message);
+    } finally {
+      setExporting(false);
+    }
+  }, [selectedStoreType, startDate, endDate]);
 
   if (loading.init) {
     return (
@@ -191,14 +212,22 @@ const ForecastDashboard: React.FC = () => {
               />
             </div>
 
-            {/* Refresh Button */}
-            <div>
+            {/* Buttons */}
+            <div className="flex gap-2">
               <button
                 onClick={fetchData}
                 disabled={loading.data}
                 className="rounded-lg bg-purple-600 px-6 py-2 text-sm font-medium text-white transition-colors hover:bg-purple-500 disabled:opacity-50"
               >
                 {loading.data ? '読込中...' : '更新'}
+              </button>
+              <button
+                onClick={handleExportPdf}
+                disabled={exporting || loading.data}
+                className="rounded-lg border border-gray-600 bg-gray-700 px-4 py-2 text-sm font-medium text-gray-300 transition-colors hover:bg-gray-600 hover:text-white disabled:opacity-50"
+                title="チャートと分析結果をPDFでダウンロード"
+              >
+                {exporting ? '出力中...' : '📄 レポート出力'}
               </button>
             </div>
           </div>
@@ -211,8 +240,8 @@ const ForecastDashboard: React.FC = () => {
           </div>
         )}
 
-        {/* Chart */}
-        <div className="mb-6">
+        {/* Chart (with ref for PDF) */}
+        <div className="mb-6" ref={chartRef}>
           <ForecastChart
             data={forecastData}
             loading={loading.data}
@@ -228,8 +257,8 @@ const ForecastDashboard: React.FC = () => {
           </div>
         )}
 
-        {/* Explainability Panel */}
-        <div className="mb-6">
+        {/* Explainability Panel (with ref for PDF) */}
+        <div className="mb-6" ref={analysisRef}>
           <ExplainabilityPanel
             analysis={analysis}
             loading={loading.analysis}
