@@ -138,14 +138,15 @@ const ForecastDashboard: React.FC = () => {
         storeType: selectedStoreType,
         startDate,
         endDate,
+        analysis: analysis || undefined,
       });
     } catch (err: any) {
-      console.error('[PDF] Export error:', err);
-      setError('PDF出力に失敗しました: ' + err?.message);
+      console.error('[Report] Export error:', err);
+      setError('レポート出力に失敗しました: ' + err?.message);
     } finally {
       setExporting(false);
     }
-  }, [selectedStoreType, startDate, endDate]);
+  }, [selectedStoreType, startDate, endDate, analysis]);
 
   if (loading.init) {
     return (

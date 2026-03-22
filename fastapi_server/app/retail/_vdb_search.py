@@ -125,15 +125,29 @@ def _extract_text_from_record(record: object) -> str:
         return record.strip() if record.strip() else ""
 
     if isinstance(record, dict):
+        # メタデータからソース情報を取得
+        source = ""
+        metadata = record.get("metadata")
+        if isinstance(metadata, dict):
+            source = metadata.get("source", "")
+
         # 優先順: resultText > text > content > page_content > prediction
         for key in ["resultText", "text", "content", "page_content", "prediction"]:
             val = record.get(key)
-            if val and isinstance(val, str) and val.strip():
-                # メタデータがあればソース情報を付加
-                source = ""
-                metadata = record.get("metadata")
-                if isinstance(metadata, dict):
-                    source = metadata.get("source", "")
+            if not val:
+                continue
+
+            # リスト型の場合（VDB prediction レスポンス: ["text1", "text2", ...]）
+            if isinstance(val, list):
+                texts = [str(v).strip() for v in val if v and str(v).strip()]
+                if texts:
+                    combined = "\n\n".join(texts)
+                    if source:
+                        return f"[出典: {source}]\n{combined}"
+                    return combined
+                continue
+
+            if isinstance(val, str) and val.strip():
                 if source:
                     return f"[出典: {source}]\n{val.strip()}"
                 return val.strip()
@@ -142,6 +156,11 @@ def _extract_text_from_record(record: object) -> str:
         for key, val in record.items():
             if isinstance(val, str) and len(val) > 50:
                 return val.strip()
+            # リスト内の長いテキストも対象
+            if isinstance(val, list):
+                for item in val:
+                    if isinstance(item, str) and len(item) > 50:
+                        return item.strip()
 
     return ""
 

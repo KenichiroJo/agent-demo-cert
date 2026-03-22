@@ -19,6 +19,7 @@ from app.retail.analysis import analyze_retail_forecast_error
 from app.retail.chat import stream_chat_with_retail_assistant
 from app.retail.data_processor import RetailDataProcessor
 from app.retail.error_analyzer import RetailErrorAnalyzer
+from app.retail.report_export import generate_forecast_report_html
 from app.retail.utils import clean_nan_values
 
 retail_router = APIRouter()
@@ -53,6 +54,13 @@ def _ea() -> RetailErrorAnalyzer:
     _ensure_initialized()
     assert error_analyzer is not None
     return error_analyzer
+
+
+class ExportReportRequest(BaseModel):
+    store_type: str
+    start_date: str
+    end_date: str
+    analysis: Optional[Dict[str, Any]] = None
 
 
 class ErrorAnalysisRequest(BaseModel):
@@ -271,4 +279,45 @@ async def retail_chat(request: ChatRequest):
         stream_chat_with_retail_assistant(messages=messages, dp=_dp(), store_type=request.store_type),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Word レポート出力
+# ---------------------------------------------------------------------------
+
+@retail_router.post("/export-report")
+async def export_report(request: ExportReportRequest):
+    """
+    売上予測レポートを Word (.doc) としてダウンロード
+    HTML ベースの .doc ファイル (python-docx 不要)
+    """
+    try:
+        _ensure_initialized()
+    except Exception:
+        raise HTTPException(status_code=503, detail=f"Not initialized: {_init_error}")
+
+    from datetime import date as date_type
+
+    forecast_data = _dp().get_forecast_data(
+        store_type=request.store_type,
+        start_date=date_type.fromisoformat(request.start_date),
+        end_date=date_type.fromisoformat(request.end_date),
+    )
+
+    html_content = generate_forecast_report_html(
+        store_type=request.store_type,
+        start_date=request.start_date,
+        end_date=request.end_date,
+        forecast_data=forecast_data,
+        analysis=request.analysis,
+    )
+
+    filename = f"forecast_report_{request.store_type}_{request.start_date}_{request.end_date}.doc"
+
+    from fastapi.responses import Response
+    return Response(
+        content=html_content.encode("utf-8"),
+        media_type="application/msword",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
