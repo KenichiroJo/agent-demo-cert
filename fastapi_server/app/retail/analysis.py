@@ -15,6 +15,8 @@ import httpx
 import yaml  # type: ignore
 from openai import AsyncOpenAI
 
+from app.retail._vdb_search import search_vdb
+
 
 def _llm_base_url(endpoint: str) -> str:
     """DataRobot エンドポイントから LLM Gateway URL を構築"""
@@ -179,16 +181,32 @@ async def analyze_retail_forecast_error(
         error=f"{float(error_val or 0):.3f}",
     )
 
+    # VDB検索: 業態と時期に関連する外部レポートを取得
+    vdb_id = os.getenv("VDB_DEPLOYMENT_ID", "")
+    vdb_section = ""
+    if vdb_id:
+        try:
+            vdb_query = f"{store_type} {date_str[:7] if len(date_str) > 7 else date_str} 売上 市場動向"
+            vdb_docs = await search_vdb(vdb_query, vdb_id, max_results=2)
+            if vdb_docs:
+                print(f"[VDB] Error analysis: query='{vdb_query}', results={len(vdb_docs)} docs")
+                vdb_section = "\n\n参考: 外部レポート（経産省EC市場調査等）:\n" + "\n---\n".join(vdb_docs)
+            else:
+                print(f"[VDB] Error analysis: query='{vdb_query}', results=0 docs")
+        except Exception as e:
+            print(f"[VDB] Error analysis error: {e}")
+
     # ユーザープロンプト構築
     user_prompt = "\n\n".join(
         [
             task_description.strip(),
             _build_base_context(data_point=data_point, error_context=error_context),
             _build_time_series_context(surrounding_data),
+            vdb_section,
             "",
             "重要: 以下の構成で回答してください：",
             "1. **誤差の概要** (1-2文): 何がどのくらい外れたか",
-            "2. **根本原因分析** (3-5項目): 各要因を具体的な数値とともに説明",
+            "2. **根本原因分析** (3-5項目): 各要因を具体的な数値とともに説明。外部レポートがある場合は引用してください",
             "3. **時系列パターン分析**: 売上推移データから読み取れるトレンドや異常",
             "4. **改善提案** (2-3項目): 予測精度向上のための具体的アクション",
         ]
