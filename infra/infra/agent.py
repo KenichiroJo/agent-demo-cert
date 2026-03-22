@@ -58,7 +58,7 @@ DRUM_PARAMS_WITH_DEFAULTS: Final[set[str]] = {
 }
 
 # Custom Model resource bundle configuration
-DEFAULT_AGENT_RESOURCE_BUNDLE_ID: Final[str] = "cpu.3xlarge"
+DEFAULT_AGENT_RESOURCE_BUNDLE_ID: Final[str] = "cpu.8xlarge"
 DEFAULT_AGENT_REPLICAS: Final[int] = 2 if ENABLE_AGENT_HA_MODE else 1
 
 # Agent deployment configuration (HPA autoscaling)

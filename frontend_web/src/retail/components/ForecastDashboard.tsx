@@ -143,7 +143,7 @@ const ForecastDashboard: React.FC = () => {
         {/* Header */}
         <div className="mb-6 flex items-center gap-3">
           <span className="text-2xl">📊</span>
-          <h1 className="text-xl font-bold text-white">需要予測ダッシュボード</h1>
+          <h1 className="text-xl font-bold text-white">売上予測ダッシュボード</h1>
         </div>
 
         {/* Controls */}

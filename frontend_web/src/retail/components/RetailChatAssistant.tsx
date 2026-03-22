@@ -35,7 +35,7 @@ const RetailChatAssistant: React.FC = () => {
       id: 'welcome',
       role: 'assistant',
       content:
-        'こんにちは！小売・EC需要予測の **AIアナリスト** です。\n\n' +
+        'こんにちは！小売・EC売上予測の **AIアナリスト** です。\n\n' +
         '左のサイドバーで **業態を選択** し、クイック質問をクリックすると分析を開始できます。\n\n' +
         '自由に質問を入力することもできます。',
       timestamp: new Date(),

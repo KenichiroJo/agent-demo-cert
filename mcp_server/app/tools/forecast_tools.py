@@ -33,7 +33,7 @@ async def run_retail_forecast(
         "業態名 (百貨店/スーパー/コンビニ/ドラッグストア/EC/全体)。デフォルトは全体。",
     ] = "全体",
 ) -> ToolResult:
-    """小売・EC売上の需要予測を実行します。
+    """小売・EC売上の売上予測を実行します。
 
     DataRobotにデプロイされた時系列予測モデルを使用して、
     指定された月・業態の売上予測値を返します。
@@ -59,7 +59,7 @@ async def run_retail_forecast(
         raise ToolError("予測対象月 (target_month) を指定してください。例: 2026-04")
 
     logger.info(
-        f"需要予測を実行: target_month={target_month}, store_type={store_type}, "
+        f"売上予測を実行: target_month={target_month}, store_type={store_type}, "
         f"deployment={forecast_deployment_id}"
     )
 
@@ -90,5 +90,5 @@ async def run_retail_forecast(
         return ToolResult(structured_content=result)
 
     except Exception as e:
-        logger.error(f"需要予測の実行に失敗しました: {e}")
-        raise ToolError(f"需要予測の実行に失敗しました: {str(e)}")
+        logger.error(f"売上予測の実行に失敗しました: {e}")
+        raise ToolError(f"売上予測の実行に失敗しました: {str(e)}")

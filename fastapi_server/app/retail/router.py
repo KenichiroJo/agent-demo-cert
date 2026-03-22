@@ -1,5 +1,5 @@
 """
-小売需要予測ダッシュボード API ルーター
+小売売上予測ダッシュボード API ルーター
 リファレンス: forecast-agent-main/backend/routers/ercot_api.py
 """
 

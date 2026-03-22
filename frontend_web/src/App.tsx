@@ -23,7 +23,7 @@ export function App() {
                   : 'text-muted-foreground hover:bg-sidebar-accent hover:text-accent-foreground'
               }`}
             >
-              需要予測ダッシュボード
+              売上予測ダッシュボード
             </button>
             <button
               type="button"

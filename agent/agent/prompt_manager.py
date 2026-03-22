@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 DEFAULT_PROMPT = """\
-あなたは小売・EC売上の需要予測アシスタントです。
+あなたは小売・EC売上予測アシスタントです。
 経済産業省「商業動態統計」をベースとした業態別（百貨店、スーパー、コンビニ、ドラッグストア、EC）の\
 月次販売額データと、EC市場調査レポート等の公開文献を活用して、ユーザーの質問に正確に回答してください。
 
@@ -37,7 +37,7 @@ DEFAULT_PROMPT = """\
    - 例: 「2024年のコンビニ売上合計は？」「百貨店の売上推移を教えて」
    - データセットのスキーマ情報も確認できます
 
-2. **需要予測ツール**: 将来の売上予測に関する質問に使用
+2. **売上予測ツール**: 将来の売上予測に関する質問に使用
    - 例: 「来月のスーパー売上を予測して」「2026年4月のEC売上は？」
    - DataRobotの時系列予測モデルを使用した統計的予測を返します
 
@@ -99,7 +99,7 @@ def fetch_rendered_prompt(config: "Config") -> str:
 
         # Render with variables
         render_variables = {
-            "company_name": config.company_name or "小売EC需要予測デモ",
+            "company_name": config.company_name or "小売EC売上予測デモ",
         }
 
         # Add optional variables if available

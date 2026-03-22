@@ -37,12 +37,12 @@ class Config(DataRobotAppFrameworkBaseSettings):  # type: ignore[misc]
     mcp_deployment_id: str | None = None
     external_mcp_url: str | None = None
 
-    # 小売EC需要予測エージェント設定
+    # 小売EC売上予測エージェント設定
     prompt_template_id: str | None = None
     forecast_deployment_id: str | None = None
     scoring_dataset_id: str | None = None
     vdb_deployment_id: str | None = None
-    company_name: str = "小売EC需要予測デモ"
+    company_name: str = "小売EC売上予測デモ"
 
     local_dev_port: int = Field(
         default=8842, validation_alias="AGENT_PORT", ge=1, le=65535

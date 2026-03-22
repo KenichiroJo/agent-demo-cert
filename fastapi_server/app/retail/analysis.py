@@ -233,7 +233,7 @@ async def analyze_retail_forecast_error(
                 {
                     "role": "system",
                     "content": (
-                        f"役割: {agent_cfg.get('role', '小売・EC業界 需要予測アナリスト')}\n"
+                        f"役割: {agent_cfg.get('role', '小売・EC業界 売上予測アナリスト')}\n"
                         f"目標: {agent_cfg.get('goal', '')}\n\n"
                         f"バックストーリー:\n{agent_cfg.get('backstory', '')}\n\n"
                         "タスクの指示と出力フォーマットに正確に従ってください。"

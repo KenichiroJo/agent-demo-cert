@@ -1,5 +1,5 @@
 """
-小売・EC需要予測 AI チャットモジュール
+小売・EC売上予測 AI チャットモジュール
 LLM Gateway を使って対話形式で売上データを分析する
 
 - チャット履歴を保持してマルチターン会話を実現
@@ -23,7 +23,7 @@ from app.retail.data_processor import RetailDataProcessor
 # システムプロンプト
 # ---------------------------------------------------------------------------
 
-RETAIL_CHAT_SYSTEM_PROMPT = """あなたは日本の小売・EC業界に精通した **需要予測 AIアナリスト** です。
+RETAIL_CHAT_SYSTEM_PROMPT = """あなたは日本の小売・EC業界に精通した **売上予測 AIアナリスト** です。
 
 ## あなたの能力
 - DataRobot AutoTS モデルの予測結果と実績売上データにアクセスできます

@@ -35,7 +35,7 @@ class UserAppConfig(BaseSettings):
         description="Name of the user being used",
     )
 
-    # 小売EC需要予測エージェント設定
+    # 小売EC売上予測エージェント設定
     forecast_deployment_id: str = Field(
         default="",
         validation_alias=AliasChoices(
