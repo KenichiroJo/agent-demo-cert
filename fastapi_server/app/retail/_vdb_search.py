@@ -78,6 +78,8 @@ async def search_vdb(
     # レスポンスパース: JSON or CSV
     results: List[str] = []
     content_type = resp.headers.get("content-type", "")
+    raw_text = resp.text[:500]
+    print(f"[VDB] Response content-type={content_type}, body_preview={raw_text[:300]}")
 
     if "application/json" in content_type:
         data = resp.json()
