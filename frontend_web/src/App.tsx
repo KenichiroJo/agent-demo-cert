@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { SidebarProvider } from '@/components/ui/sidebar';
-import Pages from '@/pages';
 import { RetailDashboardTab } from '@/retail/RetailDashboardTab';
+import RetailChatAssistant from '@/retail/components/RetailChatAssistant';
 
 type ActiveTab = 'dashboard' | 'chat';
 
@@ -45,7 +45,7 @@ export function App() {
             <RetailDashboardTab />
           </div>
           <div className="w-full h-full" style={{ display: activeTab === 'chat' ? 'contents' : 'none' }}>
-            <Pages />
+            <RetailChatAssistant />
           </div>
         </div>
       </div>
