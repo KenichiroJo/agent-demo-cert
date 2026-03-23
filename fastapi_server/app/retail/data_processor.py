@@ -265,6 +265,11 @@ class RetailDataProcessor:
             self.training_data = self._parse_date_column(self.training_data)
             self.actuals_data = self._parse_date_column(self.actuals_data)
 
+            # カラム名統一: actuals の sales_amount → sales_billion_yen
+            if "sales_billion_yen" not in self.actuals_data.columns and "sales_amount" in self.actuals_data.columns:
+                self.actuals_data.rename(columns={"sales_amount": "sales_billion_yen"}, inplace=True)
+                print("[DataProcessor] actuals カラム名変換: sales_amount → sales_billion_yen")
+
             # 予測データ: API → ローカルキャッシュ → フォールバック
             try:
                 self.prediction_data = self._fetch_predictions_from_api()
