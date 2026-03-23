@@ -211,6 +211,19 @@ fastapi_server_app_source_args = ApplicationSourceArgs(
     base_environment_id=RuntimeEnvironments.PYTHON_312_APPLICATION_BASE.value.id,
 ).model_dump(mode="json", exclude_none=True)
 
+# 小売EC売上予測: Custom Application にも必要な環境変数をランタイムパラメータとして渡す
+_retail_app_params: list[pulumi_datarobot.ApplicationSourceRuntimeParameterValueArgs] = []
+for _key in ["FORECAST_DEPLOYMENT_ID", "SCORING_DATASET_ID", "ACTUALS_DATASET_ID", "VDB_DEPLOYMENT_ID"]:
+    _val = os.environ.get(_key, "")
+    if _val:
+        _retail_app_params.append(
+            pulumi_datarobot.ApplicationSourceRuntimeParameterValueArgs(
+                key=_key,
+                type="string",
+                value=_val,
+            ),
+        )
+
 fastapi_server_app_runtime_parameters: list[
     pulumi_datarobot.ApplicationSourceRuntimeParameterValueArgs
 ] = (
@@ -223,6 +236,7 @@ fastapi_server_app_runtime_parameters: list[
         ]
         for parameter in parameter_group
     ]
+    + _retail_app_params
     + [
         pulumi_datarobot.ApplicationSourceRuntimeParameterValueArgs(
             type="credential",
@@ -240,7 +254,7 @@ fastapi_server_app_source = pulumi_datarobot.ApplicationSource(
     ),
     runtime_parameter_values=fastapi_server_app_runtime_parameters,
     resources=pulumi_datarobot.ApplicationSourceResourcesArgs(
-        resource_label=CustomAppResourceBundles.CPU_XL.value.id,
+        resource_label=os.environ.get("APP_RESOURCE_BUNDLE", CustomAppResourceBundles.CPU_XL.value.id),
     ),
     required_key_scope_level=required_key_scope_level,
     **fastapi_server_app_source_args,
