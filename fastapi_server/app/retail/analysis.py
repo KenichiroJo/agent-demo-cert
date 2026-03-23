@@ -16,6 +16,7 @@ import yaml  # type: ignore
 from openai import AsyncOpenAI
 
 from app.retail._vdb_search import search_vdb
+from app.retail.runtime_params import get_runtime_param
 
 
 def _llm_base_url(endpoint: str) -> str:
@@ -161,8 +162,8 @@ async def analyze_retail_forecast_error(
     3. AsyncOpenAI SDK で LLM Gateway を呼び出し
     4. 構造化された分析結果を返す
     """
-    endpoint = os.getenv("DATAROBOT_ENDPOINT", "")
-    api_key = datarobot_token or os.getenv("DATAROBOT_API_TOKEN", "")
+    endpoint = get_runtime_param("DATAROBOT_ENDPOINT")
+    api_key = datarobot_token or get_runtime_param("DATAROBOT_API_TOKEN")
 
     store_type = str(data_point.get("store_type", "不明"))
     date_str = str(data_point.get("year_month", ""))
@@ -182,7 +183,7 @@ async def analyze_retail_forecast_error(
     )
 
     # VDB検索: 業態と時期に関連する外部レポートを取得
-    vdb_id = os.getenv("VDB_DEPLOYMENT_ID", "")
+    vdb_id = get_runtime_param("VDB_DEPLOYMENT_ID")
     vdb_section = ""
     if vdb_id:
         try:

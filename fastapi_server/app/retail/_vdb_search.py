@@ -14,6 +14,8 @@ from typing import List
 
 import httpx
 
+from app.retail.runtime_params import get_runtime_param
+
 
 async def search_vdb(
     query: str,
@@ -38,8 +40,8 @@ async def search_vdb(
     List[str]
         関連ドキュメントのテキストリスト
     """
-    endpoint = os.getenv("DATAROBOT_ENDPOINT", "").rstrip("/")
-    token = os.getenv("DATAROBOT_API_TOKEN", "")
+    endpoint = get_runtime_param("DATAROBOT_ENDPOINT").rstrip("/")
+    token = get_runtime_param("DATAROBOT_API_TOKEN")
 
     if not endpoint or not token or not deployment_id:
         return []

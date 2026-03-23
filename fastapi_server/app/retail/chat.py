@@ -18,6 +18,7 @@ from openai import AsyncOpenAI
 from app.retail._vdb_search import search_vdb
 from app.retail.analysis import _get_available_model, _llm_base_url
 from app.retail.data_processor import RetailDataProcessor
+from app.retail.runtime_params import get_runtime_param
 
 # ---------------------------------------------------------------------------
 # システムプロンプト
@@ -158,8 +159,8 @@ async def chat_with_retail_assistant(
     Returns:
         LLM のレスポンステキスト
     """
-    endpoint = os.getenv("DATAROBOT_ENDPOINT", "")
-    api_key = datarobot_token or os.getenv("DATAROBOT_API_TOKEN", "")
+    endpoint = get_runtime_param("DATAROBOT_ENDPOINT")
+    api_key = datarobot_token or get_runtime_param("DATAROBOT_API_TOKEN")
 
     # データコンテキスト構築
     data_context = "データが利用できません。"
@@ -212,7 +213,7 @@ async def chat_with_retail_assistant(
 
 async def _fetch_vdb_context(query: str) -> str:
     """ユーザーの質問でVDB検索し、関連ドキュメントコンテキストを返す"""
-    vdb_id = os.getenv("VDB_DEPLOYMENT_ID", "")
+    vdb_id = get_runtime_param("VDB_DEPLOYMENT_ID")
     if not vdb_id or not query:
         return "外部レポートはありません。"
 
@@ -241,8 +242,8 @@ async def stream_chat_with_retail_assistant(
     Yields:
         SSE formatted strings: "data: {json}\n\n"
     """
-    endpoint = os.getenv("DATAROBOT_ENDPOINT", "")
-    api_key = datarobot_token or os.getenv("DATAROBOT_API_TOKEN", "")
+    endpoint = get_runtime_param("DATAROBOT_ENDPOINT")
+    api_key = datarobot_token or get_runtime_param("DATAROBOT_API_TOKEN")
 
     # データコンテキスト構築
     data_context = "データが利用できません。"

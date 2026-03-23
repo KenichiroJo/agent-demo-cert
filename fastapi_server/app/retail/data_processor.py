@@ -22,6 +22,7 @@ import httpx
 import numpy as np
 import pandas as pd  # type: ignore
 
+from app.retail.runtime_params import get_runtime_param
 from app.retail.utils import json_safe_float
 
 
@@ -76,9 +77,9 @@ class RetailDataProcessor:
         forecastPoint をずらしながら複数回APIを呼ぶ。
         結果はキャッシュし、次回起動時はキャッシュを優先する。
         """
-        endpoint = os.getenv("DATAROBOT_ENDPOINT", "").rstrip("/")
-        token = os.getenv("DATAROBOT_API_TOKEN", "")
-        deployment_id = os.getenv("FORECAST_DEPLOYMENT_ID", "")
+        endpoint = get_runtime_param("DATAROBOT_ENDPOINT").rstrip("/")
+        token = get_runtime_param("DATAROBOT_API_TOKEN")
+        deployment_id = get_runtime_param("FORECAST_DEPLOYMENT_ID")
 
         if not all([endpoint, token, deployment_id]):
             raise RuntimeError("予測 API に必要な環境変数が不足しています")
@@ -184,8 +185,8 @@ class RetailDataProcessor:
         return result
 
     def _download_ai_catalog_csv(self, dataset_id: str) -> pd.DataFrame:
-        endpoint = os.getenv("DATAROBOT_ENDPOINT", "").rstrip("/")
-        token = os.getenv("DATAROBOT_API_TOKEN", "")
+        endpoint = get_runtime_param("DATAROBOT_ENDPOINT").rstrip("/")
+        token = get_runtime_param("DATAROBOT_API_TOKEN")
         if not endpoint or not token:
             raise RuntimeError("DATAROBOT_ENDPOINT or DATAROBOT_API_TOKEN が未設定")
 
@@ -216,13 +217,13 @@ class RetailDataProcessor:
                 self.data_source = "local"
             else:
                 try:
-                    training_dataset_id = os.getenv(
-                        "RETAIL_TRAINING_DATASET_ID",
-                        os.getenv("SCORING_DATASET_ID", ""),
+                    training_dataset_id = (
+                        get_runtime_param("RETAIL_TRAINING_DATASET_ID")
+                        or get_runtime_param("SCORING_DATASET_ID")
                     )
-                    actuals_dataset_id = os.getenv(
-                        "RETAIL_ACTUALS_DATASET_ID",
-                        os.getenv("ACTUALS_DATASET_ID", ""),
+                    actuals_dataset_id = (
+                        get_runtime_param("RETAIL_ACTUALS_DATASET_ID")
+                        or get_runtime_param("ACTUALS_DATASET_ID")
                     )
                     if not (training_dataset_id and actuals_dataset_id):
                         raise RuntimeError("AI Catalog データセット ID が未設定です")
