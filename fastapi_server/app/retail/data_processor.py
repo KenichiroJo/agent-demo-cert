@@ -216,7 +216,10 @@ class RetailDataProcessor:
                 self.data_source = "local"
             else:
                 try:
-                    training_dataset_id = os.getenv("RETAIL_TRAINING_DATASET_ID", "")
+                    training_dataset_id = os.getenv(
+                        "RETAIL_TRAINING_DATASET_ID",
+                        os.getenv("SCORING_DATASET_ID", ""),
+                    )
                     actuals_dataset_id = os.getenv(
                         "RETAIL_ACTUALS_DATASET_ID",
                         os.getenv("ACTUALS_DATASET_ID", ""),
