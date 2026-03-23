@@ -265,10 +265,21 @@ class RetailDataProcessor:
             self.training_data = self._parse_date_column(self.training_data)
             self.actuals_data = self._parse_date_column(self.actuals_data)
 
-            # カラム名統一: actuals の sales_amount → sales_billion_yen
+            # カラム名統一 + スケール検証
             if "sales_billion_yen" not in self.actuals_data.columns and "sales_amount" in self.actuals_data.columns:
                 self.actuals_data.rename(columns={"sales_amount": "sales_billion_yen"}, inplace=True)
                 print("[DataProcessor] actuals カラム名変換: sales_amount → sales_billion_yen")
+
+            # スケール検証: actuals と training のスケールが大きく異なる場合、actuals をスキップ
+            if "sales_billion_yen" in self.training_data.columns and "sales_billion_yen" in self.actuals_data.columns:
+                train_mean = self.training_data["sales_billion_yen"].mean()
+                actuals_mean = self.actuals_data["sales_billion_yen"].mean()
+                if train_mean > 0 and actuals_mean > 0:
+                    ratio = actuals_mean / train_mean
+                    print(f"[DataProcessor] スケール検証: training平均={train_mean:.2f}, actuals平均={actuals_mean:.2f}, 比率={ratio:.1f}")
+                    if ratio > 10 or ratio < 0.1:
+                        print(f"[DataProcessor] 警告: actuals のスケールが training と大きく異なります (比率={ratio:.1f})。actuals をスキップします")
+                        self.actuals_data = pd.DataFrame(columns=self.training_data.columns)
 
             # 予測データ: API → ローカルキャッシュ → フォールバック
             try:
