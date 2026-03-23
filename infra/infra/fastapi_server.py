@@ -213,7 +213,7 @@ fastapi_server_app_source_args = ApplicationSourceArgs(
 
 # 小売EC売上予測: Custom Application にも必要な環境変数をランタイムパラメータとして渡す
 _retail_app_params: list[pulumi_datarobot.ApplicationSourceRuntimeParameterValueArgs] = []
-for _key in ["FORECAST_DEPLOYMENT_ID", "SCORING_DATASET_ID", "ACTUALS_DATASET_ID", "VDB_DEPLOYMENT_ID", "RETAIL_TRAINING_DATASET_ID"]:
+for _key in ["FORECAST_DEPLOYMENT_ID", "SCORING_DATASET_ID", "ACTUALS_DATASET_ID", "VDB_DEPLOYMENT_ID", "RETAIL_TRAINING_DATASET_ID", "AGENT_DEPLOYMENT_ID"]:
     _val = os.environ.get(_key, "")
     if _val:
         _retail_app_params.append(

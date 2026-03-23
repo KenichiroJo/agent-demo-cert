@@ -1,9 +1,10 @@
 """
 小売・EC売上予測 AI チャットモジュール
-LLM Gateway を使って対話形式で売上データを分析する
+Agent Deployment 経由で対話形式の売上データ分析を実行
 
 - チャット履歴を保持してマルチターン会話を実現
-- 売上データコンテキストを自動で LLM に提供
+- 売上データコンテキスト + VDB外部レポートをシステムプロンプトに注入
+- Agent Deployment の /chat/completions エンドポイントを呼び出し (MLOpsログ対応)
 - SSE ストリーミングでリアルタイムに応答を返す
 """
 
@@ -92,12 +93,10 @@ def _build_data_context(dp: RetailDataProcessor, store_type: str | None = None) 
         is_focus = (store_type is None) or (st == store_type)
 
         if not is_focus:
-            # 非対象業態は1行サマリのみ
             avg = df_st[actual_col].mean() if has_actual > 0 else 0
             lines.append(f"- {st}: 平均売上 {avg:.2f}億円 ({len(df_st)}件)")
             continue
 
-        # 対象業態の詳細
         lines.append(f"\n### {st}")
         lines.append(f"レコード数: {len(df_st)} (実績: {has_actual}, 予測: {has_pred})")
 
@@ -117,7 +116,6 @@ def _build_data_context(dp: RetailDataProcessor, store_type: str | None = None) 
                 mape = pct_errors.mean() if len(pct_errors) > 0 else 0
                 lines.append(f"予測精度: RMSE={rmse:.3f}億円, MAE={mae:.3f}億円, MAPE={mape:.1f}%")
 
-        # 全月データをMarkdown表形式で出力
         data_rows = []
         for _, r in df_st.iterrows():
             dt_str = str(r["year_month"])[:7]
@@ -142,22 +140,144 @@ def _build_data_context(dp: RetailDataProcessor, store_type: str | None = None) 
     return "\n".join(lines)
 
 
+# ---------------------------------------------------------------------------
+# Agent Deployment エンドポイント構築
+# ---------------------------------------------------------------------------
+
+def _get_agent_deployment_url(endpoint: str, agent_deployment_id: str) -> str:
+    """Agent Deployment の OpenAI 互換 base_url を構築"""
+    base = endpoint.rstrip("/")
+    if base.endswith("/api/v2"):
+        base = base[: -len("/api/v2")]
+    # OpenAI SDK は base_url + "/chat/completions" を呼ぶので、
+    # deployments/{id} までを base_url として返す
+    return f"{base}/api/v2/deployments/{agent_deployment_id}"
+
+
+def _get_chat_client_and_model(
+    endpoint: str, api_key: str
+) -> tuple[AsyncOpenAI, str, bool]:
+    """
+    Agent Deployment が利用可能ならそちらを使い、
+    なければ LLM Gateway にフォールバック。
+
+    Returns: (client, model_name, is_agent_deployment)
+    """
+    agent_deployment_id = get_runtime_param("AGENT_DEPLOYMENT_ID")
+
+    if agent_deployment_id:
+        # Agent Deployment 経由 (MLOps ログが残る)
+        base_url = _get_agent_deployment_url(endpoint, agent_deployment_id)
+        client = AsyncOpenAI(
+            api_key=api_key or "dummy-key",
+            base_url=base_url,
+            timeout=120.0,
+        )
+        # Agent Deployment では model パラメータは不要だが、
+        # OpenAI SDK の必須引数なのでダミー値を設定
+        model = "datarobot-agent"
+        print(f"[Retail Chat] Agent Deployment 経由: {base_url}")
+        return client, model, True
+    else:
+        # フォールバック: LLM Gateway 直接
+        client = AsyncOpenAI(
+            api_key=api_key or "dummy-key",
+            base_url=_llm_base_url(endpoint),
+            timeout=120.0,
+        )
+        print("[Retail Chat] LLM Gateway 直接 (AGENT_DEPLOYMENT_ID 未設定)")
+        return client, "", False
+
+
+# ---------------------------------------------------------------------------
+# VDB 検索ヘルパー
+# ---------------------------------------------------------------------------
+
+async def _fetch_vdb_context(query: str) -> str:
+    """ユーザーの質問でVDB検索し、関連ドキュメントコンテキストを返す"""
+    vdb_id = get_runtime_param("VDB_DEPLOYMENT_ID")
+    if not vdb_id or not query:
+        return "外部レポートはありません。"
+
+    try:
+        docs = await search_vdb(query, vdb_id, max_results=3)
+        if docs:
+            print(f"[VDB] query='{query[:50]}...', results={len(docs)} docs")
+            return "\n\n---\n\n".join(docs)
+        else:
+            print(f"[VDB] query='{query[:50]}...', results=0 docs")
+            return "外部レポートはありません。"
+    except Exception as e:
+        print(f"[VDB] Error: {e}")
+        return "外部レポートの取得に失敗しました。"
+
+
+# ---------------------------------------------------------------------------
+# チャット関数
+# ---------------------------------------------------------------------------
+
 async def chat_with_retail_assistant(
     messages: list[dict[str, str]],
     dp: RetailDataProcessor | None = None,
     datarobot_token: str | None = None,
     store_type: str | None = None,
 ) -> str:
+    """マルチターン対話で小売データを分析する (非ストリーミング版)"""
+    endpoint = get_runtime_param("DATAROBOT_ENDPOINT")
+    api_key = datarobot_token or get_runtime_param("DATAROBOT_API_TOKEN")
+
+    # データコンテキスト + VDB 構築
+    data_context = "データが利用できません。"
+    if dp is not None:
+        try:
+            data_context = _build_data_context(dp, store_type=store_type)
+        except Exception as e:
+            data_context = f"データコンテキスト構築エラー: {e}"
+
+    last_user_msg = next((m["content"] for m in reversed(messages) if m.get("role") == "user"), "")
+    vdb_context = await _fetch_vdb_context(last_user_msg)
+
+    system_prompt = (
+        RETAIL_CHAT_SYSTEM_PROMPT
+        .replace("{data_context}", data_context)
+        .replace("{vdb_context}", vdb_context)
+    )
+
+    api_messages: list[dict[str, str]] = [{"role": "system", "content": system_prompt}]
+    for msg in messages:
+        role = msg.get("role", "user")
+        content = msg.get("content", "")
+        if role in ("user", "assistant") and content:
+            api_messages.append({"role": role, "content": content})
+
+    client, model, is_agent = _get_chat_client_and_model(endpoint, api_key)
+    if not is_agent:
+        model = await _get_available_model(endpoint, api_key)
+    max_tokens = int(os.getenv("RETAIL_CHAT_MAX_TOKENS", "3000"))
+
+    completion = await client.chat.completions.create(
+        model=model,
+        messages=api_messages,  # type: ignore
+        max_tokens=max_tokens,
+        temperature=0.7,
+    )
+
+    response_text = completion.choices[0].message.content or ""
+    print(f"[Retail Chat] Response: {len(response_text)} chars, agent={is_agent}")
+    return response_text
+
+
+async def stream_chat_with_retail_assistant(
+    messages: list[dict[str, str]],
+    dp: RetailDataProcessor | None = None,
+    datarobot_token: str | None = None,
+    store_type: str | None = None,
+):
     """
-    マルチターン対話で小売データを分析する
+    SSE ストリーミング版チャット (Agent Deployment 経由)
 
-    Args:
-        messages: チャット履歴 [{"role": "user"|"assistant", "content": "..."}]
-        dp: データプロセッサ（売上データコンテキスト用）
-        datarobot_token: DataRobot API トークン
-
-    Returns:
-        LLM のレスポンステキスト
+    Yields:
+        SSE formatted strings: "data: {json}\n\n"
     """
     endpoint = get_runtime_param("DATAROBOT_ENDPOINT")
     api_key = datarobot_token or get_runtime_param("DATAROBOT_API_TOKEN")
@@ -180,7 +300,6 @@ async def chat_with_retail_assistant(
         .replace("{vdb_context}", vdb_context)
     )
 
-    # OpenAI API メッセージ配列を構築
     api_messages: list[dict[str, str]] = [{"role": "system", "content": system_prompt}]
     for msg in messages:
         role = msg.get("role", "user")
@@ -188,97 +307,16 @@ async def chat_with_retail_assistant(
         if role in ("user", "assistant") and content:
             api_messages.append({"role": role, "content": content})
 
-    # LLM Gateway 呼び出し
-    client = AsyncOpenAI(
-        api_key=api_key or "dummy-key",
-        base_url=_llm_base_url(endpoint),
-        timeout=120.0,
-    )
-    model = await _get_available_model(endpoint, api_key)
+    client, model, is_agent = _get_chat_client_and_model(endpoint, api_key)
+    if not is_agent:
+        model = await _get_available_model(endpoint, api_key)
     max_tokens = int(os.getenv("RETAIL_CHAT_MAX_TOKENS", "3000"))
 
-    print(f"[Retail Chat] model={model}, messages={len(api_messages)}, data_context_len={len(data_context)}")
-
-    completion = await client.chat.completions.create(
-        model=model,
-        messages=api_messages,  # type: ignore
-        max_tokens=max_tokens,
-        temperature=0.7,
+    print(
+        f"[Retail Chat Stream] model={model}, messages={len(api_messages)}, "
+        f"store_type={store_type}, agent={is_agent}, "
+        f"vdb={'有' if vdb_context != '外部レポートはありません。' else '無'}"
     )
-
-    response_text = completion.choices[0].message.content or ""
-    print(f"[Retail Chat] Response: {len(response_text)} chars")
-    return response_text
-
-
-async def _fetch_vdb_context(query: str) -> str:
-    """ユーザーの質問でVDB検索し、関連ドキュメントコンテキストを返す"""
-    vdb_id = get_runtime_param("VDB_DEPLOYMENT_ID")
-    if not vdb_id or not query:
-        return "外部レポートはありません。"
-
-    try:
-        docs = await search_vdb(query, vdb_id, max_results=3)
-        if docs:
-            print(f"[VDB] query='{query[:50]}...', results={len(docs)} docs")
-            return "\n\n---\n\n".join(docs)
-        else:
-            print(f"[VDB] query='{query[:50]}...', results=0 docs")
-            return "外部レポートはありません。"
-    except Exception as e:
-        print(f"[VDB] Error: {e}")
-        return "外部レポートの取得に失敗しました。"
-
-
-async def stream_chat_with_retail_assistant(
-    messages: list[dict[str, str]],
-    dp: RetailDataProcessor | None = None,
-    datarobot_token: str | None = None,
-    store_type: str | None = None,
-):
-    """
-    SSE ストリーミング版チャット
-
-    Yields:
-        SSE formatted strings: "data: {json}\n\n"
-    """
-    endpoint = get_runtime_param("DATAROBOT_ENDPOINT")
-    api_key = datarobot_token or get_runtime_param("DATAROBOT_API_TOKEN")
-
-    # データコンテキスト構築
-    data_context = "データが利用できません。"
-    if dp is not None:
-        try:
-            data_context = _build_data_context(dp, store_type=store_type)
-        except Exception as e:
-            data_context = f"データコンテキスト構築エラー: {e}"
-
-    # VDB検索: ユーザーの最新メッセージで外部レポートを取得
-    last_user_msg = next((m["content"] for m in reversed(messages) if m.get("role") == "user"), "")
-    vdb_context = await _fetch_vdb_context(last_user_msg)
-
-    system_prompt = (
-        RETAIL_CHAT_SYSTEM_PROMPT
-        .replace("{data_context}", data_context)
-        .replace("{vdb_context}", vdb_context)
-    )
-
-    api_messages: list[dict[str, str]] = [{"role": "system", "content": system_prompt}]
-    for msg in messages:
-        role = msg.get("role", "user")
-        content = msg.get("content", "")
-        if role in ("user", "assistant") and content:
-            api_messages.append({"role": role, "content": content})
-
-    client = AsyncOpenAI(
-        api_key=api_key or "dummy-key",
-        base_url=_llm_base_url(endpoint),
-        timeout=120.0,
-    )
-    model = await _get_available_model(endpoint, api_key)
-    max_tokens = int(os.getenv("RETAIL_CHAT_MAX_TOKENS", "3000"))
-
-    print(f"[Retail Chat Stream] model={model}, messages={len(api_messages)}, store_type={store_type}, vdb={'有' if vdb_context != '外部レポートはありません。' else '無'}")
 
     try:
         stream = await client.chat.completions.create(
