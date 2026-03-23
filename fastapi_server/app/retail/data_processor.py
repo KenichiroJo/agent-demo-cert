@@ -152,7 +152,8 @@ class RetailDataProcessor:
                         all_predictions.append(pred_df)
                         print(f"  forecastPoint={fp_str[:7]}: {len(pred_df)} 行")
                     else:
-                        print(f"  forecastPoint={fp_str[:7]}: エラー {resp.status_code}")
+                        body_preview = resp.text[:300] if resp.text else "(empty)"
+                        print(f"  forecastPoint={fp_str[:7]}: エラー {resp.status_code} - {body_preview}")
                 except Exception as e:
                     print(f"  forecastPoint={fp_str[:7]}: 例外 {e}")
 
@@ -245,7 +246,9 @@ class RetailDataProcessor:
                     if not (training_dataset_id and actuals_dataset_id):
                         raise RuntimeError("AI Catalog データセット ID が未設定です")
                     self.training_data = self._download_ai_catalog_csv(training_dataset_id)
+                    print(f"[AI Catalog] training columns: {list(self.training_data.columns)}, shape: {self.training_data.shape}")
                     self.actuals_data = self._download_ai_catalog_csv(actuals_dataset_id)
+                    print(f"[AI Catalog] actuals columns: {list(self.actuals_data.columns)}, shape: {self.actuals_data.shape}")
                     self.data_source = "ai_catalog"
                 except Exception as ai_err:
                     if local_exists:
@@ -295,6 +298,33 @@ class RetailDataProcessor:
             all_actuals = pd.concat(
                 [self.training_data, self.actuals_data], ignore_index=True
             )
+
+            # カラム名の自動検出: sales_billion_yen が存在しない場合
+            if "sales_billion_yen" not in all_actuals.columns:
+                # 候補カラム名を探す
+                sales_col = None
+                for candidate in ["sales_billion_yen (actual)", "sales_amount", "sales", "value", "y"]:
+                    if candidate in all_actuals.columns:
+                        sales_col = candidate
+                        break
+                # 数値カラムで最も長い名前を使うフォールバック
+                if sales_col is None:
+                    numeric_cols = all_actuals.select_dtypes(include=[np.number]).columns.tolist()
+                    # year_month, store_type 以外の数値カラム
+                    numeric_cols = [c for c in numeric_cols if c not in ("year_month", "store_type")]
+                    if numeric_cols:
+                        sales_col = numeric_cols[0]
+
+                if sales_col:
+                    print(f"[DataProcessor] カラム名変換: '{sales_col}' → 'sales_billion_yen'")
+                    all_actuals.rename(columns={sales_col: "sales_billion_yen"}, inplace=True)
+                    # training_data と actuals_data も更新（Prediction API 用）
+                    if sales_col in self.training_data.columns:
+                        self.training_data.rename(columns={sales_col: "sales_billion_yen"}, inplace=True)
+                    if sales_col in self.actuals_data.columns:
+                        self.actuals_data.rename(columns={sales_col: "sales_billion_yen"}, inplace=True)
+                else:
+                    print(f"[DataProcessor] 警告: 売上カラムが見つかりません。カラム一覧: {list(all_actuals.columns)}")
 
             # 予測カラム名の自動検出
             pred_col = None
@@ -360,16 +390,22 @@ class RetailDataProcessor:
                     self.merged_data["predicted_sales"] * 1.10
                 )
 
-            # 予測誤差 (epsilon-safe)
-            self.merged_data["forecast_error"] = (
-                self.merged_data["sales_billion_yen"] - self.merged_data["predicted_sales"]
-            )
-            self.merged_data["abs_error"] = np.abs(self.merged_data["forecast_error"])
+            # 予測誤差 (epsilon-safe) — sales_billion_yen が存在する場合のみ
+            if "sales_billion_yen" in self.merged_data.columns:
+                self.merged_data["forecast_error"] = (
+                    self.merged_data["sales_billion_yen"] - self.merged_data["predicted_sales"]
+                )
+                self.merged_data["abs_error"] = np.abs(self.merged_data["forecast_error"])
 
-            denom = self.merged_data["sales_billion_yen"].astype(float)
-            num = self.merged_data["forecast_error"].astype(float)
-            valid = np.isfinite(denom) & (np.abs(denom) > self.pct_error_denom_epsilon)
-            self.merged_data["pct_error"] = np.where(valid, (num / denom) * 100, np.nan)
+                denom = self.merged_data["sales_billion_yen"].astype(float)
+                num = self.merged_data["forecast_error"].astype(float)
+                valid = np.isfinite(denom) & (np.abs(denom) > self.pct_error_denom_epsilon)
+                self.merged_data["pct_error"] = np.where(valid, (num / denom) * 100, np.nan)
+            else:
+                print("[DataProcessor] 警告: sales_billion_yen カラムなし。誤差計算スキップ")
+                self.merged_data["forecast_error"] = np.nan
+                self.merged_data["abs_error"] = np.nan
+                self.merged_data["pct_error"] = np.nan
 
             self.merged_data["date_only"] = self.merged_data["year_month"].dt.date
             self.merged_data["month"] = self.merged_data["year_month"].dt.month
