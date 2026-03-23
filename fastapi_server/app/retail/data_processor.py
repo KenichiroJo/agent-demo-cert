@@ -203,6 +203,22 @@ class RetailDataProcessor:
 
     def _load_data(self):
         try:
+            # === 起動診断ログ ===
+            print(f"[DataProcessor] base_path={self.base_path}")
+            print(f"[DataProcessor] base_path exists={os.path.exists(self.base_path)}")
+            _diag_keys = [
+                "DATAROBOT_ENDPOINT", "DATAROBOT_API_TOKEN",
+                "FORECAST_DEPLOYMENT_ID", "SCORING_DATASET_ID",
+                "ACTUALS_DATASET_ID", "VDB_DEPLOYMENT_ID",
+            ]
+            for k in _diag_keys:
+                plain = os.getenv(k, "")
+                mlops = os.getenv(f"MLOPS_RUNTIME_PARAM_{k}", "")
+                resolved = get_runtime_param(k)
+                status = "OK" if resolved else "EMPTY"
+                print(f"[DataProcessor] {k}: plain={'SET' if plain else 'EMPTY'}, mlops={'SET' if mlops else 'EMPTY'}, resolved={status} ({resolved[:20]}...)" if resolved else f"[DataProcessor] {k}: plain={'SET' if plain else 'EMPTY'}, mlops={'SET' if mlops else 'EMPTY'}, resolved=EMPTY")
+            # === 診断ログ終わり ===
+
             data_source = (os.getenv("RETAIL_DATA_SOURCE") or "local").strip().lower()
 
             training_path = os.path.join(self.base_path, "retail_sales_dataset.csv")
@@ -210,6 +226,7 @@ class RetailDataProcessor:
             predictions_path = os.path.join(self.base_path, "predictions_dataset.csv")
 
             local_exists = os.path.exists(training_path) and os.path.exists(actuals_path)
+            print(f"[DataProcessor] local_exists={local_exists}, data_source={data_source}")
 
             if data_source != "ai_catalog" and local_exists:
                 self.training_data = pd.read_csv(training_path)
