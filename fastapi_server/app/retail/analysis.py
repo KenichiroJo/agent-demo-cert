@@ -49,11 +49,12 @@ async def _get_available_model(endpoint: str, token: str) -> str:
     headers = {"Authorization": f"Bearer {token}"}
 
     # 優先順位: コスト効率・日本語対応・速度のバランス
+    # NOTE: azure/gpt-4o-mini は2026年にリタイア済み
     preferred = [
-        "azure/gpt-4o-mini",
+        "azure/gpt-4o",
+        "azure/gpt-4o-2024-11-20",
         "azure/gpt-5-mini",
         "azure/gpt-5-nano",
-        "azure/gpt-4o",
         "azure/gpt-5",
         "anthropic/claude-sonnet-4-20250514",
         "anthropic/claude-3-haiku",
@@ -92,7 +93,7 @@ async def _get_available_model(endpoint: str, token: str) -> str:
         print(f"[LLM Gateway] カタログ取得エラー: {e}")
 
     # 最終フォールバック
-    fallback = "azure/gpt-4o-mini"
+    fallback = "azure/gpt-4o"
     print(f"[LLM Gateway] 最終フォールバック: {fallback}")
     return fallback
 
